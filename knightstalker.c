@@ -85,17 +85,29 @@ static uint64_t prog_start_ms = 0;
 static uint32_t bios_tick_base = 0;
 
 static int      opt_own_book = 1;
+static int      opt_ponder = 0;
 static int      pos_is_startpos = 1;
 
 static int      searching = 0;
 static int      is_infinite = 0;
+static int      is_pondering = 0;
+static int      use_timer_on_hit = 0;
 static uint64_t search_start_ms = 0;
+static uint64_t clock_start_ms = 0;
 static uint64_t search_hard_ms = 0;
 static int      search_depth = 1;
 static uint64_t search_nodes = 0;
 static int      stop_requested = 0;
 static int      quit_requested = 0;
 static int      stdin_eof = 0;
+
+static int      last_pv_len = 0;
+static int      last_pv_from[2] = {0, 0};
+static int      last_pv_to[2] = {0, 0};
+static uint8_t  search_root_board[64];
+static uint8_t  search_root_stm = 0;
+static uint8_t  search_root_ep = 0;
+static uint8_t  saved_engine_seg[0x10000u];
 
 /* Non-blocking stdin line queue */
 #define MAX_PENDING_LINES 64
@@ -282,13 +294,21 @@ static int extract_line_from_inbuf(char *out, int out_cap) {
     return 1;
 }
 
+static void on_ponderhit(void);
+
 static void handle_polled_line(char *line) {
     char *t = trim_ws(line);
     if (*t == '\0') return;
     if (strcmp(t, "stop") == 0) {
+        is_pondering = 0;
+        is_infinite = 0;
         stop_requested = 1;
         ram[ENGINE_BASE + 0x009cu] |= 0x80u;
+    } else if (strcmp(t, "ponderhit") == 0) {
+        on_ponderhit();
     } else if (strcmp(t, "quit") == 0) {
+        is_pondering = 0;
+        is_infinite = 0;
         quit_requested = 1;
         stop_requested = 1;
         ram[ENGINE_BASE + 0x009cu] |= 0x80u;
@@ -363,7 +383,9 @@ static void poll_stdin_during_search(void) {
         }
         LeaveCriticalSection(&stdin_cs);
         if (!have) {
-            if (eof_now && is_infinite) {
+            if (eof_now && (is_infinite || is_pondering)) {
+                is_pondering = 0;
+                is_infinite = 0;
                 stop_requested = 1;
                 ram[ENGINE_BASE + 0x009cu] |= 0x80u;
             }
@@ -373,8 +395,7 @@ static void poll_stdin_during_search(void) {
     }
 }
 
-static int read_next_uci_line(char *out, int out_cap) {
-    if (dequeue_line(out, out_cap)) return 1;
+static int read_raw_uci_line(char *out, int out_cap) {
     for (;;) {
         int have = 0;
         int eof_now = 0;
@@ -408,14 +429,15 @@ static void poll_stdin_during_search(void) {
             handle_polled_line(line);
         }
     }
-    if (stdin_eof && is_infinite) {
+    if (stdin_eof && (is_infinite || is_pondering)) {
+        is_pondering = 0;
+        is_infinite = 0;
         stop_requested = 1;
         ram[ENGINE_BASE + 0x009cu] |= 0x80u;
     }
 }
 
-static int read_next_uci_line(char *out, int out_cap) {
-    if (dequeue_line(out, out_cap)) return 1;
+static int read_raw_uci_line(char *out, int out_cap) {
     while (!extract_line_from_inbuf(out, out_cap)) {
         if (stdin_eof) return 0;
         if (!try_fill_inbuf(1)) {
@@ -426,6 +448,24 @@ static int read_next_uci_line(char *out, int out_cap) {
     return 1;
 }
 #endif
+
+static int read_next_uci_line(char *out, int out_cap) {
+    if (dequeue_line(out, out_cap)) return 1;
+    return read_raw_uci_line(out, out_cap);
+}
+
+static void wait_until_released(void) {
+    char line[MAX_LINE_LEN];
+    while ((is_infinite || is_pondering) && !stop_requested && !quit_requested) {
+        if (!read_raw_uci_line(line, sizeof(line))) {
+            is_infinite = 0;
+            is_pondering = 0;
+            stop_requested = 1;
+            break;
+        }
+        handle_polled_line(line);
+    }
+}
 
 /* =========================================================================
  * 8086 Memory Accessors & Parity LUT
@@ -958,20 +998,281 @@ static void format_sq(int sq, char out[3]) {
     out[2] = '\0';
 }
 
+static int pv_is_sq_attacked(const uint8_t b[64], int sq, uint8_t by_side) {
+    uint8_t atk_mask = by_side ? 0x20u : 0x10u;
+    int r = sq >> 3;
+    int f = sq & 7;
+
+    /* Pawn attacks */
+    if (by_side == 0) {
+        if (r > 0) {
+            if (f > 0 && b[(r - 1) * 8 + (f - 1)] == 0x10u) return 1;
+            if (f < 7 && b[(r - 1) * 8 + (f + 1)] == 0x10u) return 1;
+        }
+    } else {
+        if (r < 7) {
+            if (f > 0 && b[(r + 1) * 8 + (f - 1)] == 0x20u) return 1;
+            if (f < 7 && b[(r + 1) * 8 + (f + 1)] == 0x20u) return 1;
+        }
+    }
+
+    /* Knight attacks */
+    static const int kn_dr[8] = {-2, -2, -1, -1, 1, 1, 2, 2};
+    static const int kn_df[8] = {-1, 1, -2, 2, -2, 2, -1, 1};
+    for (int i = 0; i < 8; i++) {
+        int nr = r + kn_dr[i];
+        int nf = f + kn_df[i];
+        if (nr >= 0 && nr < 8 && nf >= 0 && nf < 8) {
+            if (b[nr * 8 + nf] == (atk_mask | 0x02u)) return 1;
+        }
+    }
+
+    /* King attacks */
+    for (int dr = -1; dr <= 1; dr++) {
+        for (int df = -1; df <= 1; df++) {
+            if (dr == 0 && df == 0) continue;
+            int nr = r + dr;
+            int nf = f + df;
+            if (nr >= 0 && nr < 8 && nf >= 0 && nf < 8) {
+                uint8_t p = b[nr * 8 + nf];
+                if ((p & 0x30u) == atk_mask &&
+                    ((p & 0x0Eu) == 0x0Cu || (p & 0x0Eu) == 0x0Eu)) {
+                    return 1;
+                }
+            }
+        }
+    }
+
+    /* Orthogonal rays (Rook / Queen) */
+    static const int orth_dr[4] = {-1, 1, 0, 0};
+    static const int orth_df[4] = {0, 0, -1, 1};
+    for (int d = 0; d < 4; d++) {
+        int nr = r + orth_dr[d];
+        int nf = f + orth_df[d];
+        while (nr >= 0 && nr < 8 && nf >= 0 && nf < 8) {
+            uint8_t p = b[nr * 8 + nf];
+            if (p != 0) {
+                if ((p & 0x30u) == atk_mask) {
+                    uint8_t pt = p & 0x0Eu;
+                    if (pt == 0x06u || pt == 0x08u || pt == 0x0Au) return 1;
+                }
+                break;
+            }
+            nr += orth_dr[d];
+            nf += orth_df[d];
+        }
+    }
+
+    /* Diagonal rays (Bishop / Queen) */
+    static const int diag_dr[4] = {-1, -1, 1, 1};
+    static const int diag_df[4] = {-1, 1, -1, 1};
+    for (int d = 0; d < 4; d++) {
+        int nr = r + diag_dr[d];
+        int nf = f + diag_df[d];
+        while (nr >= 0 && nr < 8 && nf >= 0 && nf < 8) {
+            uint8_t p = b[nr * 8 + nf];
+            if (p != 0) {
+                if ((p & 0x30u) == atk_mask) {
+                    uint8_t pt = p & 0x0Eu;
+                    if (pt == 0x04u || pt == 0x0Au) return 1;
+                }
+                break;
+            }
+            nr += diag_dr[d];
+            nf += diag_df[d];
+        }
+    }
+
+    return 0;
+}
+
+static int pv_ray_clear(const uint8_t b[64], int rf, int ff, int rt, int ft) {
+    int sr = (rt > rf) ? 1 : ((rt < rf) ? -1 : 0);
+    int sf = (ft > ff) ? 1 : ((ft < ff) ? -1 : 0);
+    int r = rf + sr;
+    int f = ff + sf;
+    while (r != rt || f != ft) {
+        if (b[r * 8 + f] != 0) return 0;
+        r += sr;
+        f += sf;
+    }
+    return 1;
+}
+
+static int pv_try_apply_move(uint8_t b[64], uint8_t *side_p, uint8_t *ep_pawn_p,
+                             int sf, int st, char out_uci[6]) {
+    if (sf < 0 || sf >= 64 || st < 0 || st >= 64 || sf == st) return 0;
+    uint8_t side = *side_p & 1u;
+    uint8_t us_mask = side ? 0x20u : 0x10u;
+    uint8_t them_mask = side ? 0x10u : 0x20u;
+
+    uint8_t p = b[sf];
+    if ((p & 0x30u) != us_mask) return 0;
+    uint8_t dst = b[st];
+    if ((dst & 0x30u) == us_mask) return 0;
+    if ((dst & 0x0Eu) == 0x0Cu || (dst & 0x0Eu) == 0x0Eu) return 0;
+
+    int rf = sf >> 3, ff = sf & 7;
+    int rt = st >> 3, ft = st & 7;
+    int dr = rt - rf, df = ft - ff;
+    int adr = (dr < 0) ? -dr : dr;
+    int adf = (df < 0) ? -df : df;
+
+    uint8_t ptype = p & 0x0Eu;
+    uint8_t next_ep_pawn = 0;
+    int is_ep = 0;
+    int is_castle = 0;
+    char promo = '\0';
+
+    switch (ptype) {
+        case 0x00u: { /* Pawn */
+            int dir = side ? -1 : 1;
+            int start_r = side ? 6 : 1;
+            int promo_r = side ? 0 : 7;
+            if (df == 0) {
+                if (dr == dir && dst == 0) {
+                    /* single push */
+                } else if (rf == start_r && dr == 2 * dir && dst == 0 && b[sf + dir * 8] == 0) {
+                    next_ep_pawn = (uint8_t)st;
+                } else {
+                    return 0;
+                }
+            } else if (adf == 1 && dr == dir) {
+                if (dst != 0) {
+                    /* normal capture */
+                } else if (*ep_pawn_p != 0 && *ep_pawn_p == (uint8_t)(rf * 8 + ft) &&
+                           b[*ep_pawn_p] == them_mask) {
+                    is_ep = 1;
+                } else {
+                    return 0;
+                }
+            } else {
+                return 0;
+            }
+            if (rt == promo_r) promo = 'q';
+            break;
+        }
+        case 0x02u: /* Knight */
+            if (!((adr == 2 && adf == 1) || (adr == 1 && adf == 2))) return 0;
+            break;
+        case 0x04u: /* Bishop */
+            if (adr != adf || adr == 0) return 0;
+            if (!pv_ray_clear(b, rf, ff, rt, ft)) return 0;
+            break;
+        case 0x06u:
+        case 0x08u: /* Rook */
+            if ((dr != 0 && df != 0) || (dr == 0 && df == 0)) return 0;
+            if (!pv_ray_clear(b, rf, ff, rt, ft)) return 0;
+            break;
+        case 0x0Au: /* Queen */
+            if (!((adr == adf && adr > 0) || (dr == 0 && df != 0) || (df == 0 && dr != 0))) return 0;
+            if (!pv_ray_clear(b, rf, ff, rt, ft)) return 0;
+            break;
+        case 0x0Cu:
+        case 0x0Eu: /* King */
+            if (adr <= 1 && adf <= 1) {
+                /* normal king move */
+            } else if (p == (us_mask | 0x0Cu) && dr == 0 && adf == 2 && ff == 4 && dst == 0) {
+                int r_base = side ? 56 : 0;
+                if (rf != (side ? 7 : 0)) return 0;
+                if (pv_is_sq_attacked(b, sf, side ^ 1u)) return 0;
+                if (ft == 6) {
+                    if (b[r_base + 7] != (us_mask | 0x06u)) return 0;
+                    if (b[r_base + 5] != 0 || b[r_base + 6] != 0) return 0;
+                    if (pv_is_sq_attacked(b, r_base + 5, side ^ 1u)) return 0;
+                } else if (ft == 2) {
+                    if (b[r_base + 0] != (us_mask | 0x06u)) return 0;
+                    if (b[r_base + 1] != 0 || b[r_base + 2] != 0 || b[r_base + 3] != 0) return 0;
+                    if (pv_is_sq_attacked(b, r_base + 3, side ^ 1u)) return 0;
+                } else {
+                    return 0;
+                }
+                is_castle = 1;
+            } else {
+                return 0;
+            }
+            break;
+        default:
+            return 0;
+    }
+
+    uint8_t nb[64];
+    memcpy(nb, b, 64);
+    nb[sf] = 0;
+    if (is_ep) {
+        nb[rf * 8 + ft] = 0;
+    }
+    if (is_castle) {
+        if (ft == 6) {
+            nb[rf * 8 + 5] = us_mask | 0x08u;
+            nb[rf * 8 + 7] = 0;
+        } else {
+            nb[rf * 8 + 3] = us_mask | 0x08u;
+            nb[rf * 8 + 0] = 0;
+        }
+    }
+    if (promo) {
+        nb[st] = us_mask | 0x0Au;
+    } else if (ptype == 0x06u) {
+        nb[st] = us_mask | 0x08u;
+    } else if (ptype == 0x0Cu) {
+        nb[st] = us_mask | 0x0Eu;
+    } else {
+        nb[st] = p;
+    }
+
+    int ksq = -1;
+    for (int i = 0; i < 64; i++) {
+        if ((nb[i] & 0x30u) == us_mask &&
+            ((nb[i] & 0x0Eu) == 0x0Cu || (nb[i] & 0x0Eu) == 0x0Eu)) {
+            ksq = i;
+            break;
+        }
+    }
+    if (ksq < 0 || pv_is_sq_attacked(nb, ksq, side ^ 1u)) return 0;
+
+    memcpy(b, nb, 64);
+    *side_p = side ^ 1u;
+    *ep_pawn_p = next_ep_pawn;
+
+    char fbuf[3], tbuf[3];
+    format_sq(sf, fbuf);
+    format_sq(st, tbuf);
+    if (promo) {
+        snprintf(out_uci, 6, "%s%s%c", fbuf, tbuf, promo);
+    } else {
+        snprintf(out_uci, 6, "%s%s", fbuf, tbuf);
+    }
+    return 1;
+}
+
+static void on_ponderhit(void) {
+    if (!is_pondering) return;
+    is_pondering = 0;
+    clock_start_ms = now_ms();
+    if (searching && use_timer_on_hit) {
+        uint32_t t = current_bios_ticks() >> 1;
+        mem_w16(ENGINE_SEG, 0x043Au, (uint16_t)(t & 0xFFFFu));
+        mem_w16(ENGINE_SEG, 0x043Cu, (uint16_t)(t >> 16));
+        ram[ENGINE_BASE + 0x009Du] = 0x00u;
+    }
+}
+
 static void handle_poll_callback(void) {
     ram[ENGINE_BASE + 0x009cu] &= (uint8_t)~0x10u;
     if (searching) {
-        if (search_hard_ms > 0) {
-            uint64_t elapsed = now_ms() - search_start_ms;
+        poll_stdin_during_search();
+        if (stop_requested) {
+            ram[ENGINE_BASE + 0x009cu] |= 0x80u;
+            return;
+        }
+        if (!is_pondering && search_hard_ms > 0) {
+            uint64_t elapsed = now_ms() - clock_start_ms;
             if (elapsed >= search_hard_ms) {
                 stop_requested = 1;
                 ram[ENGINE_BASE + 0x009cu] |= 0x80u;
                 return;
             }
-        }
-        poll_stdin_during_search();
-        if (stop_requested) {
-            ram[ENGINE_BASE + 0x009cu] |= 0x80u;
         }
     }
 }
@@ -1014,6 +1315,11 @@ static void handle_info_callback(void) {
         }
 
         int pv_printed = 0;
+        last_pv_len = 0;
+        uint8_t pv_board[64];
+        memcpy(pv_board, search_root_board, 64);
+        uint8_t pv_side = search_root_stm;
+        uint8_t pv_ep = search_root_ep;
         for (int i = 0; i < 32; i++) {
             uint8_t rf = ram[ENGINE_BASE + ((pv_off + (uint16_t)(i * 2)) & 0xFFFFu)];
             uint8_t rt = ram[ENGINE_BASE + ((pv_off + (uint16_t)(i * 2 + 1)) & 0xFFFFu)];
@@ -1021,14 +1327,20 @@ static void handle_info_callback(void) {
             int sf = mailbox_byte_to_sq(rf);
             int st = mailbox_byte_to_sq(rt);
             if (sf < 0 || st < 0) break;
-            char fbuf[3], tbuf[3];
-            format_sq(sf, fbuf);
-            format_sq(st, tbuf);
+            char move_uci[6];
+            if (!pv_try_apply_move(pv_board, &pv_side, &pv_ep, sf, st, move_uci)) {
+                break;
+            }
+            if (i < 2) {
+                last_pv_from[i] = sf;
+                last_pv_to[i] = st;
+                last_pv_len = i + 1;
+            }
             if (!pv_printed) {
                 printf(" pv");
                 pv_printed = 1;
             }
-            printf(" %s%s", fbuf, tbuf);
+            printf(" %s", move_uci);
         }
         printf("\n");
         fflush(stdout);
@@ -2217,11 +2529,95 @@ static void handle_position(char *args) {
     }
 }
 
+static void format_uci_move(uint8_t from, uint8_t to, uint8_t flg,
+                            const uint8_t board[64], char out[6]) {
+    char fbuf[3], tbuf[3];
+    format_sq((int)from, fbuf);
+    format_sq((int)to, tbuf);
+    char promo_ch = '\0';
+    uint8_t moved_piece = board[from];
+    if ((moved_piece == 0x10u || moved_piece == 0x20u) && (to < 8u || to >= 56u)) {
+        switch (flg & 0xC1u) {
+            case 0x80u: promo_ch = 'q'; break;
+            case 0x81u: promo_ch = 'r'; break;
+            case 0xC0u: promo_ch = 'b'; break;
+            case 0xC1u: promo_ch = 'n'; break;
+            default:    promo_ch = 'q'; break;
+        }
+    }
+    if (promo_ch) {
+        snprintf(out, 6, "%s%s%c", fbuf, tbuf, promo_ch);
+    } else {
+        snprintf(out, 6, "%s%s", fbuf, tbuf);
+    }
+}
+
+/*
+ * Determine a legal ponder move in the post-bestmove position.
+ * Saves and restores ENGINE_SEG so internal engine state is untouched.
+ */
+static int find_ponder_move(uint8_t best_from, uint8_t best_to, char out_ponder[6]) {
+    uint8_t post_board[64];
+    memcpy(post_board, ram + ENGINE_BASE + 0x00A0u, 64);
+    memcpy(saved_engine_seg, ram + ENGINE_BASE, 0x10000u);
+
+    /* If opponent is already checkmated or stalemated, no ponder move exists */
+    engine_cmd(0x0Bu);
+    uint8_t status = ram[ENGINE_BASE + 0x0081u];
+    if (status == 3u || status == 4u) {
+        memcpy(ram + ENGINE_BASE, saved_engine_seg, 0x10000u);
+        return 0;
+    }
+
+    /* 1. Prefer the 2nd move of the principal variation when available */
+    if (last_pv_len >= 2 &&
+        last_pv_from[0] == (int)best_from &&
+        last_pv_to[0] == (int)best_to &&
+        last_pv_from[1] >= 0 && last_pv_from[1] < 64 &&
+        last_pv_to[1] >= 0 && last_pv_to[1] < 64 &&
+        last_pv_from[1] != last_pv_to[1]) {
+        char cand[6];
+        format_uci_move((uint8_t)last_pv_from[1], (uint8_t)last_pv_to[1],
+                        0x80u, post_board, cand);
+        if (apply_uci_move(cand)) {
+            memcpy(out_ponder, cand, sizeof(cand));
+            memcpy(ram + ENGINE_BASE, saved_engine_seg, 0x10000u);
+            return 1;
+        }
+        memcpy(ram + ENGINE_BASE, saved_engine_seg, 0x10000u);
+    }
+
+    /* 2. Fallback: query FRITZ.BIN cmd 0x08 (book reply or 1-ply reply search) */
+    ram[ENGINE_BASE + 0x009Du] = 0x01u;
+    engine_cmd(0x08u);
+    if (ram[ENGINE_BASE + 0x0081u] == 0u) {
+        uint8_t pf   = ram[ENGINE_BASE + 0x0082u];
+        uint8_t pt   = ram[ENGINE_BASE + 0x0083u];
+        uint8_t pflg = ram[ENGINE_BASE + 0x0084u];
+        memcpy(ram + ENGINE_BASE, saved_engine_seg, 0x10000u);
+        if (pf < 64u && pt < 64u && pf != pt) {
+            char cand[6];
+            format_uci_move(pf, pt, pflg, post_board, cand);
+            if (apply_uci_move(cand)) {
+                memcpy(out_ponder, cand, sizeof(cand));
+                memcpy(ram + ENGINE_BASE, saved_engine_seg, 0x10000u);
+                return 1;
+            }
+            memcpy(ram + ENGINE_BASE, saved_engine_seg, 0x10000u);
+        }
+    } else {
+        memcpy(ram + ENGINE_BASE, saved_engine_seg, 0x10000u);
+    }
+
+    return 0;
+}
+
 static void handle_go(char *args) {
     int64_t wtime = -1, btime = -1, winc = 0, binc = 0;
     int64_t movestogo = 30, movetime = -1;
     int depth = -1;
     int infinite = 0;
+    int ponder = 0;
 
     char *p = args;
     while (*p) {
@@ -2246,6 +2642,8 @@ static void handle_go(char *args) {
 
         if (strcmp(tok, "infinite") == 0) {
             infinite = 1;
+        } else if (strcmp(tok, "ponder") == 0) {
+            ponder = 1;
         } else if (strcmp(tok, "depth") == 0 && val) {
             depth = atoi(val);
         } else if (strcmp(tok, "movetime") == 0 && val) {
@@ -2264,6 +2662,11 @@ static void handle_go(char *args) {
         }
     }
 
+    is_infinite = infinite;
+    is_pondering = ponder;
+    stop_requested = 0;
+    last_pv_len = 0;
+
     /* Check if any legal move exists (and check book usability) */
     apply_book_option(opt_own_book && pos_is_startpos);
     write_book_descriptor();
@@ -2272,11 +2675,17 @@ static void handle_go(char *args) {
     uint8_t pre_board[64];
     memcpy(pre_board, ram + ENGINE_BASE + 0x00A0u, 64);
     uint8_t stm = ram[ENGINE_BASE + 0x00E0u] & 1u;
+    memcpy(search_root_board, pre_board, 64);
+    search_root_stm = stm;
+    search_root_ep = ram[ENGINE_BASE + 0x00E2u];
 
     /* Check game status first (3=mate, 4=stalemate) */
     engine_cmd(0x0Bu);
     uint8_t status = ram[ENGINE_BASE + 0x0081u];
     if (status == 3u || status == 4u) {
+        wait_until_released();
+        is_infinite = 0;
+        is_pondering = 0;
         printf("bestmove 0000\n");
         fflush(stdout);
         return;
@@ -2295,6 +2704,7 @@ static void handle_go(char *args) {
         mem_w16(ENGINE_SEG, 0x0092u, 0x0FFFu);
         engine_cmd(0x06u);
         hard_ms = 0;
+        use_timer_on_hit = 0;
     } else if (movetime >= 0) {
         uint64_t mt = (movetime > 20) ? (uint64_t)movetime : 20ULL;
         target_ms = (mt * 90ULL) / 100ULL;
@@ -2302,45 +2712,54 @@ static void handle_go(char *args) {
         hard_ms = (mt > 15ULL) ? (mt - 10ULL) : mt;
         uint32_t ticks = (uint32_t)((target_ms * 182065ULL) / 10000000ULL);
         if (ticks < 1u) ticks = 1u;
-        ram[ENGINE_BASE + 0x009Du] = 0x00u;
+        ram[ENGINE_BASE + 0x009Du] = ponder ? 0x01u : 0x00u;
         ram[ENGINE_BASE + 0x009Eu] = 30u;
         mem_w16(ENGINE_SEG, 0x0090u, (uint16_t)(ticks & 0xFFFFu));
         mem_w16(ENGINE_SEG, 0x0092u, (uint16_t)(ticks >> 16));
         engine_cmd(0x06u);
+        use_timer_on_hit = 1;
     } else {
         int64_t my_time = stm ? btime : wtime;
         int64_t my_inc  = stm ? binc  : winc;
         if (my_time < 0) my_time = 60000;
-        if (my_time < 50) my_time = 50;
-        int64_t alloc = my_time / movestogo + (my_inc * 3) / 4;
-        if (alloc > my_time / 2) alloc = my_time / 2;
-        if (alloc < 20) alloc = 20;
+        int64_t reserve = (my_time > 80) ? 30 : (my_time / 2);
+        int64_t avail = my_time - reserve;
+        if (avail < 5) avail = 5;
+        int64_t alloc = avail / movestogo + (my_inc * 3) / 4;
+        if (opt_ponder || ponder) {
+            alloc += alloc / 4;
+        }
+        if (alloc > avail / 2) alloc = avail / 2;
+        if (alloc < 5) alloc = 5;
         target_ms = (uint64_t)alloc;
-        hard_ms = (uint64_t)((alloc * 3) / 2);
-        if (hard_ms > (uint64_t)(my_time - 20)) {
-            hard_ms = (my_time > 30) ? (uint64_t)(my_time - 20) : 15ULL;
+        hard_ms = (target_ms < 55ULL) ? target_ms : (uint64_t)((alloc * 3) / 2);
+        if (hard_ms > (uint64_t)avail) {
+            hard_ms = (uint64_t)avail;
         }
         uint32_t ticks = (uint32_t)((target_ms * 182065ULL) / 10000000ULL);
         if (ticks < 1u) ticks = 1u;
-        ram[ENGINE_BASE + 0x009Du] = 0x00u;
+        ram[ENGINE_BASE + 0x009Du] = ponder ? 0x01u : 0x00u;
         ram[ENGINE_BASE + 0x009Eu] = 30u;
         mem_w16(ENGINE_SEG, 0x0090u, (uint16_t)(ticks & 0xFFFFu));
         mem_w16(ENGINE_SEG, 0x0092u, (uint16_t)(ticks >> 16));
         engine_cmd(0x06u);
+        use_timer_on_hit = 1;
     }
 
     searching = 1;
-    is_infinite = infinite;
     search_start_ms = now_ms();
+    clock_start_ms = search_start_ms;
     search_hard_ms = hard_ms;
     search_depth = 1;
     search_nodes = 0;
-    stop_requested = 0;
 
     engine_cmd(0x04u);
 
     searching = 0;
+    wait_until_released();
     is_infinite = 0;
+    is_pondering = 0;
+    use_timer_on_hit = 0;
 
     uint8_t err = ram[ENGINE_BASE + 0x0081u];
     if (err != 0u) {
@@ -2359,26 +2778,14 @@ static void handle_go(char *args) {
         return;
     }
 
-    char fbuf[3], tbuf[3];
-    format_sq((int)from, fbuf);
-    format_sq((int)to, tbuf);
+    char best_str[6];
+    format_uci_move(from, to, flg, pre_board, best_str);
 
-    char promo_ch = '\0';
-    uint8_t moved_piece = pre_board[from];
-    if ((moved_piece == 0x10u || moved_piece == 0x20u) && (to < 8u || to >= 56u)) {
-        switch (flg & 0xC1u) {
-            case 0x80u: promo_ch = 'q'; break;
-            case 0x81u: promo_ch = 'r'; break;
-            case 0xC0u: promo_ch = 'b'; break;
-            case 0xC1u: promo_ch = 'n'; break;
-            default:    promo_ch = 'q'; break;
-        }
-    }
-
-    if (promo_ch) {
-        printf("bestmove %s%s%c\n", fbuf, tbuf, promo_ch);
+    char ponder_str[6];
+    if ((opt_ponder || ponder) && find_ponder_move(from, to, ponder_str)) {
+        printf("bestmove %s ponder %s\n", best_str, ponder_str);
     } else {
-        printf("bestmove %s%s\n", fbuf, tbuf);
+        printf("bestmove %s\n", best_str);
     }
     fflush(stdout);
 }
@@ -2399,6 +2806,8 @@ static void handle_setoption(char *args) {
     if (strcmp(name, "ownbook") == 0) {
         opt_own_book = (strcmp(val, "true") == 0 || strcmp(val, "1") == 0) ? 1 : 0;
         apply_book_option(opt_own_book && pos_is_startpos);
+    } else if (strcmp(name, "ponder") == 0) {
+        opt_ponder = (strcmp(val, "true") == 0 || strcmp(val, "1") == 0) ? 1 : 0;
     }
 }
 
@@ -2429,9 +2838,10 @@ int main(void) {
         if (*cmd == '\0') continue;
 
         if (strcmp(cmd, "uci") == 0) {
-            printf("id name KnightStalkerUCI 1.0 (Fritz 1.00 1991)\n");
+            printf("id name KnightStalkerUCI 1.1 (Fritz 1.00 1991)\n");
             printf("id author Frans Morsch\n");
             printf("option name OwnBook type check default true\n");
+            printf("option name Ponder type check default false\n");
             printf("uciok\n");
             fflush(stdout);
         } else if (strcmp(cmd, "isready") == 0) {
@@ -2448,7 +2858,7 @@ int main(void) {
         } else if (strncmp(cmd, "go", 2) == 0 &&
                    (cmd[2] == '\0' || isspace((unsigned char)cmd[2]))) {
             handle_go(cmd + 2);
-        } else if (strcmp(cmd, "stop") == 0) {
+        } else if (strcmp(cmd, "stop") == 0 || strcmp(cmd, "ponderhit") == 0) {
             /* No active search */
         } else if (strcmp(cmd, "quit") == 0) {
             break;

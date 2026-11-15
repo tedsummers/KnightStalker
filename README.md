@@ -9,16 +9,20 @@ Standalone **32-bit** UCI chess engines for **Linux** (`KnightStalkerUCI`, 32-bi
 
 ## Supported UCI Commands
 
-- `uci` (`id name KnightStalkerUCI 1.0 (Fritz 1.00 1991)`, `id author Frans Morsch`, `option name OwnBook type check default true`, `uciok`)
-- `isready` (`readyok`, including responsive handling during `go infinite`)
+- `uci` (`id name KnightStalkerUCI 1.1 (Fritz 1.00 1991)`, `id author Frans Morsch`, `option name OwnBook type check default true`, `option name Ponder type check default false`, `uciok`)
+- `isready` (`readyok`, including responsive handling during `go infinite` and `go ponder`)
 - `ucinewgame`
 - `setoption name OwnBook value <true|false>`
+- `setoption name Ponder value <true|false>`
 - `position [startpos | fen <fen>] [moves <m1> <m2> ...]`
-- `go [depth <n> | movetime <ms> | wtime <ms> btime <ms> winc <ms> binc <ms> movestogo <n> | infinite]`
+- `go [ponder] [depth <n> | movetime <ms> | wtime <ms> btime <ms> winc <ms> binc <ms> movestogo <n> | infinite]`
+- `ponderhit`
 - `stop`
 - `quit`
 
-> Note: `FRITZ.FBK` tracks ply history from the standard starting position, so `OwnBook` is used from `startpos` (with move history) and automatically bypassed for custom FEN positions.
+> Note:
+> - `FRITZ.FBK` tracks ply history from the standard starting position, so `OwnBook` is used from `startpos` (with move history) and automatically bypassed for custom FEN positions.
+> - When `Ponder` is enabled (`setoption name Ponder value true`) or `go ponder` is used, `bestmove` outputs a verified legal `ponder <move>` continuation whenever one exists, and `go ponder` searches without time-abort until `ponderhit` (which starts the move clock) or `stop` is received.
 
 ## Build Instructions
 
