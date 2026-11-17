@@ -2,6 +2,14 @@
 
 Standalone **32-bit** UCI chess engines for **Linux** (`KnightStalkerUCI`, 32-bit `i386` ELF) and **Windows** (`KnightStalkerUCI.exe`, 32-bit `i386` PE32), wrapping Frans Morsch's 1991 16-bit MS-DOS *KnightStalker* / *Fritz 1.00* engine (`FRITZ.BIN`) and opening book (`FRITZ.FBK`).
 
+## Try It Out on Lichess
+
+You can play against **KnightStalkerUCI** live on Lichess via the [**KnightStalker_UCI**](https://lichess.org/@/KnightStalker_UCI) bot account:
+
+- **Profile**: [https://lichess.org/@/KnightStalker_UCI](https://lichess.org/@/KnightStalker_UCI)
+- **Challenge directly**: [Challenge KnightStalker_UCI](https://lichess.org/?user=KnightStalker_UCI#friend)
+- **Accepted challenges**: Standard chess, **Casual** games, **Blitz** or **Rapid** time controls (human challengers)
+
 ## Overview
 
 - **Zero runtime dependencies**: Both `FRITZ.BIN` (`28,828` bytes) and `FRITZ.FBK` (`16,132` bytes) are embedded directly into the executable via `fritz_data.h`. No external files, DOSBox, or GUI files are required at runtime.
@@ -66,14 +74,6 @@ On Windows natively with MSYS2 MinGW 32-bit or Zig installed, you can also run:
 ```powershell
 zig cc -target x86-windows-gnu -O3 -Wall -Wextra -std=c11 -s -o KnightStalkerUCI.exe knightstalker.c
 ```
-
-## Try It Out on Lichess
-
-You can play against **KnightStalkerUCI** live on Lichess via the [**KnightStalker_UCI**](https://lichess.org/@/KnightStalker_UCI) bot account:
-
-- **Profile**: [https://lichess.org/@/KnightStalker_UCI](https://lichess.org/@/KnightStalker_UCI)
-- **Challenge directly**: [Challenge KnightStalker_UCI](https://lichess.org/?user=KnightStalker_UCI#friend)
-- **Accepted challenges**: Standard chess, **Casual** games, **Blitz** or **Rapid** time controls (human challengers)
 
 ## Usage
 
