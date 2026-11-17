@@ -67,6 +67,14 @@ On Windows natively with MSYS2 MinGW 32-bit or Zig installed, you can also run:
 zig cc -target x86-windows-gnu -O3 -Wall -Wextra -std=c11 -s -o KnightStalkerUCI.exe knightstalker.c
 ```
 
+## Try It Out on Lichess
+
+You can play against **KnightStalkerUCI** live on Lichess via the [**KnightStalker_UCI**](https://lichess.org/@/KnightStalker_UCI) bot account:
+
+- **Profile**: [https://lichess.org/@/KnightStalker_UCI](https://lichess.org/@/KnightStalker_UCI)
+- **Challenge directly**: [Challenge KnightStalker_UCI](https://lichess.org/?user=KnightStalker_UCI#friend)
+- **Accepted challenges**: Standard chess, **Casual** games, **Blitz** or **Rapid** time controls (human challengers)
+
 ## Usage
 
 Download the prebuilt release binary for your platform (`KnightStalkerUCI` for Linux or `KnightStalkerUCI.exe` for Windows) or compile it from source, then register it as a **UCI engine** in any compatible chess GUI such as Arena, CuteChess, BanksiaGUI, Nibbler, or Lucas Chess.
