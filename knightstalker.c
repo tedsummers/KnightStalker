@@ -22,6 +22,7 @@
 #include <windows.h>
 #else
 #include <errno.h>
+#include <pthread.h>
 #include <sys/select.h>
 #include <unistd.h>
 #endif
@@ -76,7 +77,7 @@ typedef struct {
     uint16_t flags;
 } Cpu8086;
 
-static uint8_t ram[RAM_SIZE];
+static uint8_t ram[RAM_SIZE + 4];
 static uint8_t parity_lut[256];
 static Cpu8086 cpu;
 
@@ -86,7 +87,51 @@ static uint32_t bios_tick_base = 0;
 
 static int      opt_own_book = 1;
 static int      opt_ponder = 0;
+static int      opt_hash_mb = 0;
+static int      opt_threads = 1;
 static int      pos_is_startpos = 1;
+
+/* Lockless Transposition Table & Lazy SMP State */
+#define MAX_SMP_THREADS 32
+
+typedef struct {
+    uint64_t key_xor_data;
+    uint64_t data;
+} TTEntry;
+
+typedef struct {
+    uint64_t key;
+    uint32_t orig_alpha;
+    uint32_t beta;
+    uint16_t best_from;
+    uint16_t best_to;
+    uint8_t  rem;
+    uint8_t  active;
+} TTFrame;
+
+typedef struct {
+    uint8_t *ram;
+    TTEntry *tt;
+    uint64_t tt_mask;
+    uint64_t nodes;
+    int      tid;
+    int      is_main;
+    uint8_t  tt_gen;
+} FritzCtx;
+
+static TTEntry *g_tt = NULL;
+static uint64_t g_tt_mask = 0;
+static int      g_tt_alloc_mb = 0;
+static uint8_t  g_tt_gen = 0;
+
+static uint64_t zobrist_psq[64][80];
+static uint64_t zobrist_ep[80];
+static uint64_t zobrist_stm = 0;
+
+static volatile int smp_stop = 0;
+static FritzCtx     main_ctx;
+static FritzCtx     smp_ctxs[MAX_SMP_THREADS];
+static int          smp_active_helpers = 0;
 
 static int      searching = 0;
 static int      is_infinite = 0;
@@ -119,6 +164,8 @@ static int      pending_head = 0;
 static int      pending_tail = 0;
 static int      pending_count = 0;
 
+static volatile int stdin_has_pending = 0;
+
 #ifdef _WIN32
 static CRITICAL_SECTION stdin_cs;
 static HANDLE           stdin_event = NULL;
@@ -127,6 +174,14 @@ static int              win_head = 0;
 static int              win_tail = 0;
 static int              win_count = 0;
 static int              win_eof = 0;
+#else
+static pthread_mutex_t  stdin_mtx = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t   stdin_cv  = PTHREAD_COND_INITIALIZER;
+static char             posix_lines[MAX_PENDING_LINES][MAX_LINE_LEN];
+static int              posix_head = 0;
+static int              posix_tail = 0;
+static int              posix_count = 0;
+static int              posix_eof = 0;
 #endif
 
 /* =========================================================================
@@ -333,6 +388,7 @@ static void win32_push_line(const char *line) {
     memcpy(win_lines[win_tail], line, len + 1);
     win_tail = (win_tail + 1) % MAX_PENDING_LINES;
     win_count++;
+    stdin_has_pending = 1;
     SetEvent(stdin_event);
     LeaveCriticalSection(&stdin_cs);
 }
@@ -361,6 +417,7 @@ static DWORD WINAPI win32_stdin_thread(LPVOID arg) {
     }
     EnterCriticalSection(&stdin_cs);
     win_eof = 1;
+    stdin_has_pending = 1;
     SetEvent(stdin_event);
     LeaveCriticalSection(&stdin_cs);
     return 0;
@@ -380,6 +437,7 @@ static void poll_stdin_during_search(void) {
             have = 1;
         } else {
             eof_now = win_eof;
+            stdin_has_pending = 0;
         }
         LeaveCriticalSection(&stdin_cs);
         if (!have) {
@@ -410,6 +468,7 @@ static int read_raw_uci_line(char *out, int out_cap) {
             have = 1;
         } else {
             eof_now = win_eof;
+            stdin_has_pending = 0;
             if (!eof_now) ResetEvent(stdin_event);
         }
         LeaveCriticalSection(&stdin_cs);
@@ -419,33 +478,108 @@ static int read_raw_uci_line(char *out, int out_cap) {
     }
 }
 #else
-static void poll_stdin_during_search(void) {
-    char line[MAX_LINE_LEN];
-    while (extract_line_from_inbuf(line, sizeof(line))) {
-        handle_polled_line(line);
+static void posix_push_line(const char *line) {
+    size_t len = strlen(line);
+    if (len >= MAX_LINE_LEN) return;
+    pthread_mutex_lock(&stdin_mtx);
+    while (posix_count >= MAX_PENDING_LINES) {
+        pthread_cond_wait(&stdin_cv, &stdin_mtx);
     }
-    while (try_fill_inbuf(0)) {
+    memcpy(posix_lines[posix_tail], line, len + 1);
+    posix_tail = (posix_tail + 1) % MAX_PENDING_LINES;
+    posix_count++;
+    stdin_has_pending = 1;
+    pthread_cond_broadcast(&stdin_cv);
+    pthread_mutex_unlock(&stdin_mtx);
+}
+
+static void *posix_stdin_thread(void *arg) {
+    (void)arg;
+    char line[MAX_LINE_LEN];
+    for (;;) {
         while (extract_line_from_inbuf(line, sizeof(line))) {
-            handle_polled_line(line);
+            posix_push_line(line);
+        }
+        if (stdin_eof) break;
+        if (!try_fill_inbuf(1)) {
+            if (!stdin_eof && inlen >= MAX_LINE_LEN - 1) {
+                inlen = 0;
+                inbuf[0] = '\0';
+                continue;
+            }
+            break;
         }
     }
-    if (stdin_eof && (is_infinite || is_pondering)) {
-        is_pondering = 0;
-        is_infinite = 0;
-        stop_requested = 1;
-        ram[ENGINE_BASE + 0x009cu] |= 0x80u;
+    if (inlen > 0) {
+        inbuf[inlen] = '\0';
+        posix_push_line(inbuf);
+        inlen = 0;
+    }
+    pthread_mutex_lock(&stdin_mtx);
+    posix_eof = 1;
+    stdin_has_pending = 1;
+    pthread_cond_broadcast(&stdin_cv);
+    pthread_mutex_unlock(&stdin_mtx);
+    return NULL;
+}
+
+static void poll_stdin_during_search(void) {
+    for (;;) {
+        char line[MAX_LINE_LEN];
+        int have = 0;
+        int eof_now = 0;
+        pthread_mutex_lock(&stdin_mtx);
+        if (posix_count > 0) {
+            size_t len = strlen(posix_lines[posix_head]);
+            memcpy(line, posix_lines[posix_head], len + 1);
+            posix_head = (posix_head + 1) % MAX_PENDING_LINES;
+            posix_count--;
+            have = 1;
+            pthread_cond_broadcast(&stdin_cv);
+        } else {
+            eof_now = posix_eof;
+            stdin_has_pending = 0;
+        }
+        pthread_mutex_unlock(&stdin_mtx);
+        if (!have) {
+            if (eof_now && (is_infinite || is_pondering)) {
+                is_pondering = 0;
+                is_infinite = 0;
+                stop_requested = 1;
+                ram[ENGINE_BASE + 0x009cu] |= 0x80u;
+            }
+            break;
+        }
+        handle_polled_line(line);
     }
 }
 
 static int read_raw_uci_line(char *out, int out_cap) {
-    while (!extract_line_from_inbuf(out, out_cap)) {
-        if (stdin_eof) return 0;
-        if (!try_fill_inbuf(1)) {
-            if (extract_line_from_inbuf(out, out_cap)) return 1;
-            return 0;
+    for (;;) {
+        int have = 0;
+        int eof_now = 0;
+        pthread_mutex_lock(&stdin_mtx);
+        while (posix_count == 0 && !posix_eof) {
+            stdin_has_pending = 0;
+            pthread_cond_wait(&stdin_cv, &stdin_mtx);
         }
+        if (posix_count > 0) {
+            size_t len = strlen(posix_lines[posix_head]);
+            if (len >= (size_t)out_cap) len = (size_t)out_cap - 1;
+            memcpy(out, posix_lines[posix_head], len);
+            out[len] = '\0';
+            posix_head = (posix_head + 1) % MAX_PENDING_LINES;
+            posix_count--;
+            have = 1;
+            pthread_cond_broadcast(&stdin_cv);
+        } else {
+            eof_now = posix_eof;
+            stdin_has_pending = 0;
+        }
+        pthread_mutex_unlock(&stdin_mtx);
+        if (have) return 1;
+        if (eof_now) return 0;
     }
-    return 1;
 }
 #endif
 
@@ -485,14 +619,80 @@ static inline uint32_t lin_addr(uint16_t seg, uint16_t off) {
     return (((uint32_t)seg << 4) + (uint32_t)off) & 0xFFFFFu;
 }
 
+static void refresh_bios_ticks_into(uint8_t *target_ram) {
+    uint32_t t = current_bios_ticks();
+    target_ram[0x0046Cu] = (uint8_t)(t & 0xFFu);
+    target_ram[0x0046Du] = (uint8_t)((t >> 8) & 0xFFu);
+    target_ram[0x0046Eu] = (uint8_t)((t >> 16) & 0xFFu);
+    target_ram[0x0046Fu] = (uint8_t)((t >> 24) & 0xFFu);
+}
+
 static void refresh_bios_ticks_if_needed(uint32_t lin) {
     if (lin >= 0x0046Cu && lin <= 0x0046Fu) {
-        uint32_t t = current_bios_ticks();
-        ram[0x0046Cu] = (uint8_t)(t & 0xFFu);
-        ram[0x0046Du] = (uint8_t)((t >> 8) & 0xFFu);
-        ram[0x0046Eu] = (uint8_t)((t >> 16) & 0xFFu);
-        ram[0x0046Fu] = (uint8_t)((t >> 24) & 0xFFu);
+        refresh_bios_ticks_into(ram);
     }
+}
+
+/* =========================================================================
+ * Zobrist Hashing, Lockless Transposition Table & Lazy SMP Helpers
+ * ========================================================================= */
+
+static uint64_t splitmix64_next(uint64_t *state) {
+    uint64_t z = (*state += 0x9E3779B97F4A7C15ULL);
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
+
+static void init_zobrist(void) {
+    uint64_t st = 0x19910F12F1234567ULL;
+    for (int p = 0; p < 64; p++) {
+        for (int s = 0; s < 80; s++) {
+            zobrist_psq[p][s] = splitmix64_next(&st);
+        }
+    }
+    for (int s = 0; s < 80; s++) {
+        zobrist_ep[s] = splitmix64_next(&st);
+    }
+    zobrist_stm = splitmix64_next(&st);
+}
+
+static void tt_resize(int mb) {
+    if (mb < 0) mb = 0;
+    if (mb > 512) mb = 512;
+    if (mb == g_tt_alloc_mb) return;
+    free(g_tt);
+    g_tt = NULL;
+    g_tt_mask = 0;
+    g_tt_alloc_mb = 0;
+    if (mb == 0) return;
+
+    uint64_t bytes = (uint64_t)mb * 1024ULL * 1024ULL;
+    uint64_t entries = bytes / sizeof(TTEntry);
+    uint64_t pow2 = 1ULL;
+    while ((pow2 << 1) <= entries) pow2 <<= 1;
+    if (pow2 < 1024ULL) pow2 = 1024ULL;
+
+    g_tt = (TTEntry *)calloc((size_t)pow2, sizeof(TTEntry));
+    if (g_tt) {
+        g_tt_mask = pow2 - 1ULL;
+        g_tt_alloc_mb = mb;
+    }
+}
+
+static void tt_clear(void) {
+    if (g_tt && g_tt_mask > 0) {
+        memset(g_tt, 0, (size_t)(g_tt_mask + 1ULL) * sizeof(TTEntry));
+    }
+    g_tt_gen = 0;
+}
+
+static uint64_t total_search_nodes(void) {
+    uint64_t sum = main_ctx.nodes;
+    for (int i = 0; i < smp_active_helpers; i++) {
+        sum += __atomic_load_n(&smp_ctxs[i].nodes, __ATOMIC_RELAXED);
+    }
+    return sum;
 }
 
 static inline uint8_t mem_r8(uint16_t seg, uint16_t off) {
@@ -1258,22 +1458,27 @@ static void on_ponderhit(void) {
     }
 }
 
+static void fast_poll_check(void) {
+    if (__builtin_expect(stdin_has_pending, 0)) {
+        poll_stdin_during_search();
+    }
+    if (__builtin_expect(stop_requested, 0)) {
+        ram[ENGINE_BASE + 0x009cu] |= 0x80u;
+        return;
+    }
+    if (!is_pondering && search_hard_ms > 0) {
+        uint64_t elapsed = now_ms() - clock_start_ms;
+        if (__builtin_expect(elapsed >= search_hard_ms, 0)) {
+            stop_requested = 1;
+            ram[ENGINE_BASE + 0x009cu] |= 0x80u;
+        }
+    }
+}
+
 static void handle_poll_callback(void) {
     ram[ENGINE_BASE + 0x009cu] &= (uint8_t)~0x10u;
     if (searching) {
-        poll_stdin_during_search();
-        if (stop_requested) {
-            ram[ENGINE_BASE + 0x009cu] |= 0x80u;
-            return;
-        }
-        if (!is_pondering && search_hard_ms > 0) {
-            uint64_t elapsed = now_ms() - clock_start_ms;
-            if (elapsed >= search_hard_ms) {
-                stop_requested = 1;
-                ram[ENGINE_BASE + 0x009cu] |= 0x80u;
-                return;
-            }
-        }
+        fast_poll_check();
     }
 }
 
@@ -1287,14 +1492,16 @@ static void handle_info_callback(void) {
         uint16_t pv_off = mem_r16(ENGINE_SEG, 0x00E4u);
         uint64_t elapsed = now_ms() - search_start_ms;
         if (elapsed == 0) elapsed = 1;
-        uint64_t nps = (search_nodes * 1000ULL) / elapsed;
+        uint64_t tot_nodes = total_search_nodes();
+        if (tot_nodes == 0) tot_nodes = search_nodes;
+        uint64_t nps = (tot_nodes * 1000ULL) / elapsed;
 
         if (raw_score > 0x7D00) {
             int mate_moves = ((0x7F80 - (int)raw_score) >> 2) + 1;
             if (mate_moves < 1) mate_moves = 1;
             printf("info depth %d score mate %d nodes %llu nps %llu time %llu",
                    search_depth, mate_moves,
-                   (unsigned long long)search_nodes,
+                   (unsigned long long)tot_nodes,
                    (unsigned long long)nps,
                    (unsigned long long)elapsed);
         } else if (raw_score < -0x7D00) {
@@ -1302,14 +1509,14 @@ static void handle_info_callback(void) {
             if (mate_moves < 1) mate_moves = 1;
             printf("info depth %d score mate -%d nodes %llu nps %llu time %llu",
                    search_depth, mate_moves,
-                   (unsigned long long)search_nodes,
+                   (unsigned long long)tot_nodes,
                    (unsigned long long)nps,
                    (unsigned long long)elapsed);
         } else {
             int cp = ((int32_t)raw_score * 100) / 256;
             printf("info depth %d score cp %d nodes %llu nps %llu time %llu",
                    search_depth, cp,
-                   (unsigned long long)search_nodes,
+                   (unsigned long long)tot_nodes,
                    (unsigned long long)nps,
                    (unsigned long long)elapsed);
         }
@@ -1348,23 +1555,10 @@ static void handle_info_callback(void) {
 }
 
 /* =========================================================================
- * 8086 Execution Engine
+ * 8086 Execution Engine (Fallback Interpreter + Static Recompiled Core)
  * ========================================================================= */
 
-static void exec_fritz_call(void) {
-    memset(&cpu, 0, sizeof(cpu));
-    cpu.sregs[S_CS] = ENGINE_SEG;
-    cpu.sregs[S_DS] = ENGINE_SEG;
-    cpu.sregs[S_ES] = ENGINE_SEG;
-    cpu.sregs[S_SS] = STACK_SEG;
-    cpu.regs[R_SP]  = 0xFFFEu;
-    cpu.ip          = 0x0100u;
-    cpu.flags       = 0x0202u;
-
-    /* Far return target TRAP_SEG:0x0000 */
-    push16(TRAP_SEG);
-    push16(0x0000u);
-
+static void exec_fritz_interp_continue(void) {
     uint32_t insns = 0;
 
     for (;;) {
@@ -2324,6 +2518,206 @@ static void exec_fritz_call(void) {
     }
 }
 
+static inline uint16_t ctx_r16(const uint8_t *base, uint16_t off) {
+    uint16_t v;
+    memcpy(&v, base + off, 2);
+    return v;
+}
+static inline void ctx_w16(uint8_t *base, uint16_t off, uint16_t v) {
+    memcpy(base + off, &v, 2);
+}
+
+static inline uint64_t fritz_zobrist_hash(const uint8_t *eng, uint16_t bp, uint8_t stm_dl) {
+    uint64_t h = (stm_dl & 0x20u) ? zobrist_stm : 0ULL;
+    for (int i = 0; i < 32; i++) {
+        uint16_t sq = ctx_r16(eng, (uint16_t)(0x0300u + (uint16_t)(i << 1)));
+        if (sq >= 0x0132u && sq <= 0x01CCu) {
+            uint8_t pc = eng[sq];
+            h ^= zobrist_psq[pc & 0x3Fu][(sq - 0x0132u) >> 1];
+        }
+    }
+    if (bp >= 2u) {
+        uint8_t mv_flg = eng[0x052Cu + bp - 2u];
+        if ((mv_flg & 0x41u) == 0x41u) {
+            uint16_t ep_to = ctx_r16(eng, (uint16_t)(0x04A6u + bp - 2u));
+            if (ep_to >= 0x0132u && ep_to <= 0x01CCu) {
+                h ^= zobrist_ep[(ep_to - 0x0132u) >> 1];
+            }
+        }
+    }
+    return h;
+}
+
+static int tt_probe_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp, uint8_t stm_dl, TTFrame *tt_stack) {
+    uint16_t ply = bp >> 1;
+    if (ply == 0u || ply >= 36u) return 0;
+    tt_stack[ply].active = 0;
+
+    uint16_t target_bp = ctx_r16(eng, (uint16_t)(0x08EEu + bp));
+    if (eng[0x062Cu + bp] & 0x80u) target_bp = (uint16_t)(target_bp + 2u);
+    if (bp > target_bp) return 0; /* quiescence */
+
+    uint8_t rem = (uint8_t)(((target_bp - bp) >> 1) + 1u);
+    uint64_t key = fritz_zobrist_hash(eng, bp, stm_dl);
+    uint32_t alpha = (uint32_t)ctx_r16(eng, (uint16_t)(0x06ECu + bp));
+    uint32_t neg_beta = (uint32_t)ctx_r16(eng, (uint16_t)(0x06EAu + bp));
+    uint32_t beta = 0x10000u - neg_beta;
+
+    TTFrame *f = &tt_stack[ply];
+    f->key = key;
+    f->orig_alpha = alpha;
+    f->beta = beta;
+    f->best_from = 0;
+    f->best_to = 0;
+    f->rem = rem;
+    f->active = 1;
+
+    TTEntry *e = &ctx->tt[key & ctx->tt_mask];
+    uint64_t d = __atomic_load_n(&e->data, __ATOMIC_RELAXED);
+    uint64_t k = __atomic_load_n(&e->key_xor_data, __ATOMIC_RELAXED);
+    if ((k ^ d) == key) {
+        uint16_t tt_score = (uint16_t)(d & 0xFFFFu);
+        uint16_t tt_from  = (uint16_t)((d >> 16) & 0x3FFu);
+        uint16_t tt_to    = (uint16_t)((d >> 26) & 0x3FFu);
+        uint8_t  tt_depth = (uint8_t)((d >> 36) & 0xFFu);
+        uint8_t  tt_bound = (uint8_t)((d >> 44) & 0x3u);
+
+        if (tt_score > 0xFD00u) tt_score = (uint16_t)(tt_score - bp);
+        else if (tt_score < 0x0300u && tt_score > 0u) tt_score = (uint16_t)(tt_score + bp);
+
+        if (tt_from >= 0x0132u && tt_from <= 0x01CCu &&
+            tt_to >= 0x0132u && tt_to <= 0x01CCu) {
+            ctx_w16(eng, (uint16_t)(0x07B0u + bp), tt_from);
+            ctx_w16(eng, (uint16_t)(0x07F0u + bp), tt_to);
+        }
+
+        int is_pv = (beta > alpha + 1u);
+        if (tt_depth >= rem && tt_score != 0u &&
+            !(is_pv && ply <= 1u) &&
+            !(tt_score == 0x8000u && ply <= 2u)) {
+            if (tt_bound == 1u ||
+                (tt_bound == 2u && (uint32_t)tt_score >= beta) ||
+                (tt_bound == 3u && (uint32_t)tt_score <= alpha)) {
+                ctx_w16(eng, (uint16_t)(0x06ACu + bp), tt_score);
+                f->active = 0;
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static void tt_store_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp, TTFrame *tt_stack) {
+    uint16_t ply = bp >> 1;
+    if (ply == 0u || ply >= 36u || !tt_stack[ply].active) return;
+    TTFrame *f = &tt_stack[ply];
+    f->active = 0;
+
+    if (eng[0x009Cu] & 0x80u) return;
+
+    uint16_t score = ctx_r16(eng, (uint16_t)(0x06ACu + bp));
+    if (score == 0u) {
+        score = (eng[0x062Cu + bp] & 0x80u) ? (uint16_t)(0x0080u + bp - 2u) : 0x8000u;
+    }
+
+    uint8_t bound;
+    if ((uint32_t)score >= f->beta) {
+        bound = 2u; /* LOWER */
+    } else if ((uint32_t)score <= f->orig_alpha) {
+        bound = 3u; /* UPPER */
+    } else {
+        bound = 1u; /* EXACT */
+    }
+
+    uint16_t store_score = score;
+    if (store_score > 0xFD00u) store_score = (uint16_t)(store_score + bp);
+    else if (store_score < 0x0300u) store_score = (uint16_t)(store_score - bp);
+
+    TTEntry *e = &ctx->tt[f->key & ctx->tt_mask];
+    uint64_t old_d = __atomic_load_n(&e->data, __ATOMIC_RELAXED);
+    uint64_t old_k = __atomic_load_n(&e->key_xor_data, __ATOMIC_RELAXED);
+    uint8_t  old_depth = (uint8_t)((old_d >> 36) & 0xFFu);
+    uint8_t  old_gen   = (uint8_t)((old_d >> 46) & 0x3Fu);
+
+    if ((old_k ^ old_d) != f->key || old_gen != ctx->tt_gen || f->rem >= old_depth || bound == 1u) {
+        uint16_t bf = (f->best_from >= 0x0132u && f->best_from <= 0x01CCu) ? f->best_from : 0u;
+        uint16_t bt = (f->best_to >= 0x0132u && f->best_to <= 0x01CCu) ? f->best_to : 0u;
+        if (bf == 0u && (old_k ^ old_d) == f->key) {
+            bf = (uint16_t)((old_d >> 16) & 0x3FFu);
+            bt = (uint16_t)((old_d >> 26) & 0x3FFu);
+        }
+        uint64_t data = (uint64_t)store_score
+                      | ((uint64_t)(bf & 0x3FFu) << 16)
+                      | ((uint64_t)(bt & 0x3FFu) << 26)
+                      | ((uint64_t)f->rem << 36)
+                      | ((uint64_t)bound << 44)
+                      | ((uint64_t)(ctx->tt_gen & 0x3Fu) << 46);
+        __atomic_store_n(&e->data, data, __ATOMIC_RELAXED);
+        __atomic_store_n(&e->key_xor_data, f->key ^ data, __ATOMIC_RELAXED);
+    }
+}
+
+static void smp_diversify_root(FritzCtx *ctx, uint8_t *eng) {
+    /* Helper thread Lazy SMP diversification: stagger depth and rotate secondary root moves */
+    uint16_t cur_d = ctx_r16(eng, 0x08EEu);
+    if (cur_d == 0u && (ctx->tid & 1)) {
+        uint16_t max_d = ctx_r16(eng, 0x0416u);
+        uint16_t bump = (uint16_t)(2u * ((ctx->tid % 3) + 1));
+        if (bump <= max_d) {
+            ctx_w16(eng, 0x08EEu, bump);
+        }
+    }
+    uint16_t nmoves_bytes = ctx_r16(eng, 0x0412u);
+    int nmoves = (int)(nmoves_bytes >> 1);
+    if (nmoves > 3) {
+        int swap_a = 1 + ((ctx->tid + (cur_d >> 1)) % (nmoves - 1));
+        int swap_b = 1 + ((ctx->tid * 3 + (cur_d >> 1) + 1) % (nmoves - 1));
+        if (swap_a != swap_b) {
+            uint16_t offs[5] = {0x10C6u, 0x1166u, 0x1206u, 0x1346u, 0x13E6u};
+            for (int k = 0; k < 5; k++) {
+                uint16_t oa = (uint16_t)(offs[k] + (uint16_t)(swap_a * 2));
+                uint16_t ob = (uint16_t)(offs[k] + (uint16_t)(swap_b * 2));
+                uint16_t va = ctx_r16(eng, oa);
+                uint16_t vb = ctx_r16(eng, ob);
+                ctx_w16(eng, oa, vb);
+                ctx_w16(eng, ob, va);
+            }
+        }
+    }
+}
+
+#include "fritz_recompiled.h"
+
+#ifdef _WIN32
+static DWORD WINAPI smp_worker_entry(LPVOID arg) {
+    FritzCtx *ctx = (FritzCtx *)arg;
+    ctx->ram[ENGINE_BASE + 0x0080u] = 0x04u;
+    exec_fritz_recompiled_ctx(ctx);
+    return 0;
+}
+#else
+static void *smp_worker_entry(void *arg) {
+    FritzCtx *ctx = (FritzCtx *)arg;
+    ctx->ram[ENGINE_BASE + 0x0080u] = 0x04u;
+    exec_fritz_recompiled_ctx(ctx);
+    return NULL;
+}
+#endif
+
+static void exec_fritz_call(void) {
+    main_ctx.ram = ram;
+    main_ctx.tt = searching ? g_tt : NULL;
+    main_ctx.tt_mask = searching ? g_tt_mask : 0ULL;
+    main_ctx.nodes = 0;
+    main_ctx.tid = 0;
+    main_ctx.is_main = 1;
+    main_ctx.tt_gen = g_tt_gen;
+    exec_fritz_recompiled_ctx(&main_ctx);
+    if (searching) {
+        search_nodes = total_search_nodes();
+    }
+}
+
 /* =========================================================================
  * FRITZ.BIN High-Level Driver
  * ========================================================================= */
@@ -2753,7 +3147,72 @@ static void handle_go(char *args) {
     search_depth = 1;
     search_nodes = 0;
 
+    /* Ensure TT is allocated if Hash > 0 or Lazy SMP (Threads > 1) is enabled */
+    int eff_hash = opt_hash_mb;
+    if (opt_threads > 1 && eff_hash == 0) eff_hash = 16;
+    tt_resize(eff_hash);
+    if (eff_hash > 0) {
+        g_tt_gen = (uint8_t)((g_tt_gen + 1u) & 0x3Fu);
+    }
+
+    int nhelpers = (opt_threads > 1 && g_tt_mask > 0) ? (opt_threads - 1) : 0;
+    if (nhelpers > MAX_SMP_THREADS - 1) nhelpers = MAX_SMP_THREADS - 1;
+    smp_active_helpers = 0;
+    __atomic_store_n(&smp_stop, 0, __ATOMIC_RELAXED);
+
+#ifdef _WIN32
+    HANDLE helper_handles[MAX_SMP_THREADS];
+#else
+    pthread_t helper_tids[MAX_SMP_THREADS];
+#endif
+    int launched = 0;
+    for (int i = 0; i < nhelpers; i++) {
+        uint8_t *wram = (uint8_t *)malloc(RAM_SIZE + 4);
+        if (!wram) break;
+        memcpy(wram, ram, RAM_SIZE + 4);
+        wram[ENGINE_BASE + 0x009Du] = 0x01u; /* helpers stop via smp_stop, not BIOS timer */
+        smp_ctxs[i].ram = wram;
+        smp_ctxs[i].tt = g_tt;
+        smp_ctxs[i].tt_mask = g_tt_mask;
+        smp_ctxs[i].nodes = 0;
+        smp_ctxs[i].tid = i + 1;
+        smp_ctxs[i].is_main = 0;
+        smp_ctxs[i].tt_gen = g_tt_gen;
+#ifdef _WIN32
+        HANDLE h = CreateThread(NULL, 0, smp_worker_entry, &smp_ctxs[i], 0, NULL);
+        if (h) {
+            helper_handles[launched++] = h;
+        } else {
+            free(wram);
+            break;
+        }
+#else
+        if (pthread_create(&helper_tids[launched], NULL, smp_worker_entry, &smp_ctxs[i]) == 0) {
+            launched++;
+        } else {
+            free(wram);
+            break;
+        }
+#endif
+    }
+    smp_active_helpers = launched;
+
     engine_cmd(0x04u);
+
+    if (launched > 0) {
+        __atomic_store_n(&smp_stop, 1, __ATOMIC_RELAXED);
+        for (int i = 0; i < launched; i++) {
+#ifdef _WIN32
+            WaitForSingleObject(helper_handles[i], INFINITE);
+            CloseHandle(helper_handles[i]);
+#else
+            pthread_join(helper_tids[i], NULL);
+#endif
+            free(smp_ctxs[i].ram);
+            smp_ctxs[i].ram = NULL;
+        }
+        smp_active_helpers = 0;
+    }
 
     searching = 0;
     wait_until_released();
@@ -2794,26 +3253,45 @@ static void handle_setoption(char *args) {
     char *name_kw = strstr(args, "name");
     if (!name_kw) return;
     char *val_kw = strstr(name_kw, "value");
-    if (!val_kw) return;
 
-    *val_kw = '\0';
-    char *name = trim_ws(name_kw + 4);
-    char *val  = trim_ws(val_kw + 5);
+    char *name;
+    char *val = NULL;
+    if (val_kw) {
+        *val_kw = '\0';
+        name = trim_ws(name_kw + 4);
+        val  = trim_ws(val_kw + 5);
+        for (char *p = val; *p; p++) *p = (char)tolower((unsigned char)*p);
+    } else {
+        name = trim_ws(name_kw + 4);
+    }
 
     for (char *p = name; *p; p++) *p = (char)tolower((unsigned char)*p);
-    for (char *p = val;  *p; p++) *p = (char)tolower((unsigned char)*p);
 
-    if (strcmp(name, "ownbook") == 0) {
+    if (strcmp(name, "clear hash") == 0) {
+        tt_clear();
+    } else if (strcmp(name, "ownbook") == 0 && val) {
         opt_own_book = (strcmp(val, "true") == 0 || strcmp(val, "1") == 0) ? 1 : 0;
         apply_book_option(opt_own_book && pos_is_startpos);
-    } else if (strcmp(name, "ponder") == 0) {
+    } else if (strcmp(name, "ponder") == 0 && val) {
         opt_ponder = (strcmp(val, "true") == 0 || strcmp(val, "1") == 0) ? 1 : 0;
+    } else if (strcmp(name, "hash") == 0 && val) {
+        int mb = atoi(val);
+        if (mb < 0) mb = 0;
+        if (mb > 512) mb = 512;
+        opt_hash_mb = mb;
+        tt_resize(opt_hash_mb);
+    } else if (strcmp(name, "threads") == 0 && val) {
+        int th = atoi(val);
+        if (th < 1) th = 1;
+        if (th > MAX_SMP_THREADS) th = MAX_SMP_THREADS;
+        opt_threads = th;
     }
 }
 
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     init_parity_lut();
+    init_zobrist();
 
     prog_start_ms = now_ms();
     bios_tick_base = (uint32_t)(((uint64_t)time(NULL) % 86400ULL) * 18ULL);
@@ -2828,7 +3306,19 @@ int main(void) {
         CloseHandle(hStdinThread);
     } else {
         win_eof = 1;
+        stdin_has_pending = 1;
         if (stdin_event) SetEvent(stdin_event);
+    }
+#else
+    pthread_t stdin_tid;
+    if (pthread_create(&stdin_tid, NULL, posix_stdin_thread, NULL) == 0) {
+        pthread_detach(stdin_tid);
+    } else {
+        pthread_mutex_lock(&stdin_mtx);
+        posix_eof = 1;
+        stdin_has_pending = 1;
+        pthread_cond_broadcast(&stdin_cv);
+        pthread_mutex_unlock(&stdin_mtx);
     }
 #endif
 
@@ -2838,16 +3328,20 @@ int main(void) {
         if (*cmd == '\0') continue;
 
         if (strcmp(cmd, "uci") == 0) {
-            printf("id name KnightStalkerUCI 1.1 (Fritz 1.00 1991)\n");
+            printf("id name KnightStalkerUCI 2.0 (Fritz 1.00 1991)\n");
             printf("id author Frans Morsch\n");
             printf("option name OwnBook type check default true\n");
             printf("option name Ponder type check default false\n");
+            printf("option name Hash type spin default 0 min 0 max 512\n");
+            printf("option name Threads type spin default 1 min 1 max 32\n");
+            printf("option name Clear Hash type button\n");
             printf("uciok\n");
             fflush(stdout);
         } else if (strcmp(cmd, "isready") == 0) {
             printf("readyok\n");
             fflush(stdout);
         } else if (strcmp(cmd, "ucinewgame") == 0) {
+            tt_clear();
             engine_new_game();
         } else if (strncmp(cmd, "setoption", 9) == 0 &&
                    (cmd[9] == '\0' || isspace((unsigned char)cmd[9]))) {
