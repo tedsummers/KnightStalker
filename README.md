@@ -10,7 +10,7 @@ You can play against **KnightStalkerUCI** live on Lichess via the [**KnightStalk
 - **Challenge directly**: [Challenge KnightStalker_UCI](https://lichess.org/?user=KnightStalker_UCI#friend)
 - **Accepted challenges**: Standard chess, **Casual** games, **Blitz** or **Rapid** time controls (human challengers)
 
-## What's New in v2.1
+## What's New in v2.5
 
 - **Search depth cap lifted from 28/30 plies to 128 plies**: Relocated `FRITZ.BIN`'s 20 tightly-packed 32-ply arrays into unused `ENGINE_SEG` RAM (`0x7800..0x9FFF`, 512 bytes / 256 plies per array), expanded the internal 8086 stack from 288 bytes (`0x3630`) to ~24 KB (`0xFFF0`), and raised the internal ply guards and UCI depth cap to **128 plies** — allowing deep endgames and `go infinite` / `go depth 40+` searches to go far past the original 1991 28-ply ceiling while preserving 100% bit-for-bit fidelity at depths ≤ 28 (`Hash=0, Threads=1`).
 
@@ -39,7 +39,7 @@ Measured on an Intel Core Ultra 7 265 (`OwnBook=false`):
 
 ## Supported UCI Commands
 
-- `uci` (`id name KnightStalkerUCI 2.1 (Fritz 1.00 1991)`, `id author Frans Morsch`, options below, `uciok`)
+- `uci` (`id name KnightStalkerUCI 2.5 (Fritz 1.00 1991)`, `id author Frans Morsch`, options below, `uciok`)
 - `isready` (`readyok`, including responsive handling during `go infinite` and `go ponder`)
 - `ucinewgame`
 - `setoption name OwnBook value <true|false>` (default `true`)

@@ -3342,7 +3342,7 @@ int main(void) {
         if (*cmd == '\0') continue;
 
         if (strcmp(cmd, "uci") == 0) {
-            printf("id name KnightStalkerUCI 2.1 (Fritz 1.00 1991)\n");
+            printf("id name KnightStalkerUCI 2.5 (Fritz 1.00 1991)\n");
             printf("id author Frans Morsch\n");
             printf("option name OwnBook type check default true\n");
             printf("option name Ponder type check default false\n");
