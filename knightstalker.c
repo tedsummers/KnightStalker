@@ -2527,6 +2527,19 @@ static inline void ctx_w16(uint8_t *base, uint16_t off, uint16_t v) {
     memcpy(base + off, &v, 2);
 }
 
+/* Relocated 256-ply array bases inside ENGINE_SEG (0x7800..0x9FFF) */
+#define PLY_MAX_DEPTH  128
+#define PLY_STACK_CAP  136u
+#define PLY_04A6       0x7A06u
+#define PLY_052C       0x7E06u
+#define PLY_062C       0x8602u
+#define PLY_06AC       0x8A00u
+#define PLY_06EA       0x8C02u
+#define PLY_06EC       0x8C04u
+#define PLY_07B0       0x9200u
+#define PLY_07F0       0x9400u
+#define PLY_08EE       0x9C00u
+
 static inline uint64_t fritz_zobrist_hash(const uint8_t *eng, uint16_t bp, uint8_t stm_dl) {
     uint64_t h = (stm_dl & 0x20u) ? zobrist_stm : 0ULL;
     for (int i = 0; i < 32; i++) {
@@ -2537,9 +2550,9 @@ static inline uint64_t fritz_zobrist_hash(const uint8_t *eng, uint16_t bp, uint8
         }
     }
     if (bp >= 2u) {
-        uint8_t mv_flg = eng[0x052Cu + bp - 2u];
+        uint8_t mv_flg = eng[PLY_052C + bp - 2u];
         if ((mv_flg & 0x41u) == 0x41u) {
-            uint16_t ep_to = ctx_r16(eng, (uint16_t)(0x04A6u + bp - 2u));
+            uint16_t ep_to = ctx_r16(eng, (uint16_t)(PLY_04A6 + bp - 2u));
             if (ep_to >= 0x0132u && ep_to <= 0x01CCu) {
                 h ^= zobrist_ep[(ep_to - 0x0132u) >> 1];
             }
@@ -2550,17 +2563,17 @@ static inline uint64_t fritz_zobrist_hash(const uint8_t *eng, uint16_t bp, uint8
 
 static int tt_probe_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp, uint8_t stm_dl, TTFrame *tt_stack) {
     uint16_t ply = bp >> 1;
-    if (ply == 0u || ply >= 36u) return 0;
+    if (ply == 0u || ply >= PLY_STACK_CAP) return 0;
     tt_stack[ply].active = 0;
 
-    uint16_t target_bp = ctx_r16(eng, (uint16_t)(0x08EEu + bp));
-    if (eng[0x062Cu + bp] & 0x80u) target_bp = (uint16_t)(target_bp + 2u);
+    uint16_t target_bp = ctx_r16(eng, (uint16_t)(PLY_08EE + bp));
+    if (eng[PLY_062C + bp] & 0x80u) target_bp = (uint16_t)(target_bp + 2u);
     if (bp > target_bp) return 0; /* quiescence */
 
     uint8_t rem = (uint8_t)(((target_bp - bp) >> 1) + 1u);
     uint64_t key = fritz_zobrist_hash(eng, bp, stm_dl);
-    uint32_t alpha = (uint32_t)ctx_r16(eng, (uint16_t)(0x06ECu + bp));
-    uint32_t neg_beta = (uint32_t)ctx_r16(eng, (uint16_t)(0x06EAu + bp));
+    uint32_t alpha = (uint32_t)ctx_r16(eng, (uint16_t)(PLY_06EC + bp));
+    uint32_t neg_beta = (uint32_t)ctx_r16(eng, (uint16_t)(PLY_06EA + bp));
     uint32_t beta = 0x10000u - neg_beta;
 
     TTFrame *f = &tt_stack[ply];
@@ -2587,8 +2600,8 @@ static int tt_probe_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp, uint8_t stm_d
 
         if (tt_from >= 0x0132u && tt_from <= 0x01CCu &&
             tt_to >= 0x0132u && tt_to <= 0x01CCu) {
-            ctx_w16(eng, (uint16_t)(0x07B0u + bp), tt_from);
-            ctx_w16(eng, (uint16_t)(0x07F0u + bp), tt_to);
+            ctx_w16(eng, (uint16_t)(PLY_07B0 + bp), tt_from);
+            ctx_w16(eng, (uint16_t)(PLY_07F0 + bp), tt_to);
         }
 
         int is_pv = (beta > alpha + 1u);
@@ -2598,7 +2611,7 @@ static int tt_probe_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp, uint8_t stm_d
             if (tt_bound == 1u ||
                 (tt_bound == 2u && (uint32_t)tt_score >= beta) ||
                 (tt_bound == 3u && (uint32_t)tt_score <= alpha)) {
-                ctx_w16(eng, (uint16_t)(0x06ACu + bp), tt_score);
+                ctx_w16(eng, (uint16_t)(PLY_06AC + bp), tt_score);
                 f->active = 0;
                 return 1;
             }
@@ -2609,15 +2622,15 @@ static int tt_probe_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp, uint8_t stm_d
 
 static void tt_store_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp, TTFrame *tt_stack) {
     uint16_t ply = bp >> 1;
-    if (ply == 0u || ply >= 36u || !tt_stack[ply].active) return;
+    if (ply == 0u || ply >= PLY_STACK_CAP || !tt_stack[ply].active) return;
     TTFrame *f = &tt_stack[ply];
     f->active = 0;
 
     if (eng[0x009Cu] & 0x80u) return;
 
-    uint16_t score = ctx_r16(eng, (uint16_t)(0x06ACu + bp));
+    uint16_t score = ctx_r16(eng, (uint16_t)(PLY_06AC + bp));
     if (score == 0u) {
-        score = (eng[0x062Cu + bp] & 0x80u) ? (uint16_t)(0x0080u + bp - 2u) : 0x8000u;
+        score = (eng[PLY_062C + bp] & 0x80u) ? (uint16_t)(0x0080u + bp - 2u) : 0x8000u;
     }
 
     uint8_t bound;
@@ -2639,7 +2652,7 @@ static void tt_store_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp, TTFrame *tt_
     uint8_t  old_depth = (uint8_t)((old_d >> 36) & 0xFFu);
     uint8_t  old_gen   = (uint8_t)((old_d >> 46) & 0x3Fu);
 
-    if ((old_k ^ old_d) != f->key || old_gen != ctx->tt_gen || f->rem >= old_depth || bound == 1u) {
+    if ((old_k ^ old_d) != f->key || old_gen != ctx->tt_gen || f->rem >= old_depth || (bound == 1u && (uint32_t)f->rem + 2u >= (uint32_t)old_depth)) {
         uint16_t bf = (f->best_from >= 0x0132u && f->best_from <= 0x01CCu) ? f->best_from : 0u;
         uint16_t bt = (f->best_to >= 0x0132u && f->best_to <= 0x01CCu) ? f->best_to : 0u;
         if (bf == 0u && (old_k ^ old_d) == f->key) {
@@ -2659,12 +2672,12 @@ static void tt_store_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp, TTFrame *tt_
 
 static void smp_diversify_root(FritzCtx *ctx, uint8_t *eng) {
     /* Helper thread Lazy SMP diversification: stagger depth and rotate secondary root moves */
-    uint16_t cur_d = ctx_r16(eng, 0x08EEu);
+    uint16_t cur_d = ctx_r16(eng, PLY_08EE);
     if (cur_d == 0u && (ctx->tid & 1)) {
         uint16_t max_d = ctx_r16(eng, 0x0416u);
         uint16_t bump = (uint16_t)(2u * ((ctx->tid % 3) + 1));
         if (bump <= max_d) {
-            ctx_w16(eng, 0x08EEu, bump);
+            ctx_w16(eng, PLY_08EE, bump);
         }
     }
     uint16_t nmoves_bytes = ctx_r16(eng, 0x0412u);
@@ -2751,7 +2764,7 @@ static void engine_init(void) {
     mem_w16(ENGINE_SEG, 0x008Au, 0x0002u);
     mem_w16(ENGINE_SEG, 0x008Cu, TRAP_SEG);
 
-    ram[ENGINE_BASE + 0x009Eu] = 30u;
+    ram[ENGINE_BASE + 0x009Eu] = (uint8_t)PLY_MAX_DEPTH;
     engine_cmd(0xFFu);
     write_book_descriptor();
     apply_book_option(opt_own_book);
@@ -3089,9 +3102,9 @@ static void handle_go(char *args) {
     uint64_t hard_ms = 0;
 
     if (infinite || depth > 0) {
-        int d = infinite ? 30 : depth;
+        int d = infinite ? PLY_MAX_DEPTH : depth;
         if (d < 1) d = 1;
-        if (d > 30) d = 30;
+        if (d > PLY_MAX_DEPTH) d = PLY_MAX_DEPTH;
         ram[ENGINE_BASE + 0x009Du] = 0x01u; /* fixed depth: disable internal timer check */
         ram[ENGINE_BASE + 0x009Eu] = (uint8_t)d;
         mem_w16(ENGINE_SEG, 0x0090u, 0xFFFFu);
@@ -3107,7 +3120,7 @@ static void handle_go(char *args) {
         uint32_t ticks = (uint32_t)((target_ms * 182065ULL) / 10000000ULL);
         if (ticks < 1u) ticks = 1u;
         ram[ENGINE_BASE + 0x009Du] = ponder ? 0x01u : 0x00u;
-        ram[ENGINE_BASE + 0x009Eu] = 30u;
+        ram[ENGINE_BASE + 0x009Eu] = (uint8_t)PLY_MAX_DEPTH;
         mem_w16(ENGINE_SEG, 0x0090u, (uint16_t)(ticks & 0xFFFFu));
         mem_w16(ENGINE_SEG, 0x0092u, (uint16_t)(ticks >> 16));
         engine_cmd(0x06u);
@@ -3133,7 +3146,7 @@ static void handle_go(char *args) {
         uint32_t ticks = (uint32_t)((target_ms * 182065ULL) / 10000000ULL);
         if (ticks < 1u) ticks = 1u;
         ram[ENGINE_BASE + 0x009Du] = ponder ? 0x01u : 0x00u;
-        ram[ENGINE_BASE + 0x009Eu] = 30u;
+        ram[ENGINE_BASE + 0x009Eu] = (uint8_t)PLY_MAX_DEPTH;
         mem_w16(ENGINE_SEG, 0x0090u, (uint16_t)(ticks & 0xFFFFu));
         mem_w16(ENGINE_SEG, 0x0092u, (uint16_t)(ticks >> 16));
         engine_cmd(0x06u);
@@ -3329,7 +3342,7 @@ int main(void) {
         if (*cmd == '\0') continue;
 
         if (strcmp(cmd, "uci") == 0) {
-            printf("id name KnightStalkerUCI 2.0 (Fritz 1.00 1991)\n");
+            printf("id name KnightStalkerUCI 2.1 (Fritz 1.00 1991)\n");
             printf("id author Frans Morsch\n");
             printf("option name OwnBook type check default true\n");
             printf("option name Ponder type check default false\n");

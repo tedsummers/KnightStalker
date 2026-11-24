@@ -19,6 +19,45 @@ ALL_FLAGS = CF | ZF | SF | OF
 REG16 = ["ax", "cx", "dx", "bx", "sp", "bp", "si", "di"]
 SREG = ["es", "cs", "ss", "ds"]
 
+# Relocate FRITZ.BIN's 20 tightly-packed 32-ply arrays into unused ENGINE_SEG RAM
+# (0x7800..0x9FFF, 512 bytes = 256 plies per array) and move the internal 8086 stack
+# top from 0x3630 to 0xFFF0 (~24 KB stack), lifting the 28-ply ceiling to 128 plies.
+PLY_MAX_BP = 0x0100  # 128 plies (bp increments by 2 per ply)
+NEW_STACK_TOP = 0xFFF0
+STACK_PATCH_IPS = {0x363D, 0x38EC, 0x3970, 0x39EB, 0x3A4E}
+PLY_CAP_IPS = {0x58D8, 0x591E, 0x5935}
+
+PLY_RELOC_MAP = {}
+_PLY_ARRAYS = [
+    (0x045A, 0x7800, [0x045A, 0x045C, 0x045E, 0x0460]),
+    (0x04A0, 0x7A00, [0x04A0, 0x04A2, 0x04A4, 0x04A6]),
+    (0x04E6, 0x7C00, [0x04E6]),
+    (0x0526, 0x7E00, [0x0526, 0x0528, 0x052A, 0x052C, 0x052E]),
+    (0x056C, 0x8000, [0x056C]),
+    (0x05AC, 0x8200, [0x05AC]),
+    (0x05EC, 0x8400, [0x05EC]),
+    (0x062A, 0x8600, [0x062A, 0x062C, 0x062E]),
+    (0x066A, 0x8800, [0x066A, 0x066C]),
+    (0x06AC, 0x8A00, [0x06AC, 0x06AE]),
+    (0x06E8, 0x8C00, [0x06E8, 0x06EA, 0x06EC, 0x06EE]),
+    (0x072A, 0x8E00, [0x072A, 0x072C, 0x072E, 0x0730]),
+    (0x076C, 0x9000, [0x076C, 0x076E, 0x0770, 0x0772]),
+    (0x07B0, 0x9200, [0x07B0, 0x07B2]),
+    (0x07F0, 0x9400, [0x07F0, 0x07F2]),
+    (0x0830, 0x9600, [0x0830]),
+    (0x0870, 0x9800, [0x0870]),
+    (0x08AE, 0x9A00, [0x08AE, 0x08B0]),
+    (0x08EE, 0x9C00, [0x08EE, 0x08F0]),
+    (0x1486, 0x9E00, [0x1486, 0x1488, 0x148A, 0x148C, 0x148E, 0x1490, 0x1492, 0x1494, 0x1496]),
+]
+for _old_base, _new_base, _offs in _PLY_ARRAYS:
+    for _o in _offs:
+        PLY_RELOC_MAP[_o] = _new_base + (_o - _old_base)
+
+
+def reloc_disp(addr):
+    return PLY_RELOC_MAP.get(addr, addr)
+
 
 def load_fritz_bin(header_path):
     with open(header_path, "r") as f:
@@ -352,7 +391,7 @@ def decode_ea(ins, const_eng=False):
     def_seg = 3  # DS
     disp = ins["disp"]
     if mod == 0 and rm == 6:
-        ea = f"0x{disp:04X}u"
+        ea = f"0x{reloc_disp(disp):04X}u"
     else:
         parts = []
         if rm == 0: parts = ["bx", "si"]
@@ -369,7 +408,8 @@ def decode_ea(ins, const_eng=False):
             else:
                 parts.append(f"(uint16_t)({disp})")
         elif mod == 2 and disp != 0:
-            parts.append(f"0x{disp:04X}u")
+            rdisp = reloc_disp(disp) if rm == 6 else disp
+            parts.append(f"0x{rdisp:04X}u")
         if len(parts) == 1:
             ea = parts[0]
         else:
@@ -631,13 +671,14 @@ def emit_insn(ins, live, const_eng):
     if op in (0x81, 0x83):
         aop = (modrm >> 3) & 7
         is_reg, rm, sb, off = decode_ea(ins, const_eng)
+        eff_imm = PLY_MAX_BP if ip in PLY_CAP_IPS else imm
         if not is_reg:
             lines.append(f"{{ uint16_t _off = {off};")
-            lines.extend(emit_alu(16, aop, f"R16({sb}, _off)", f"0x{imm:04X}u",
+            lines.extend(emit_alu(16, aop, f"R16({sb}, _off)", f"0x{eff_imm:04X}u",
                                   lambda r: f"W16({sb}, _off, {r});", live))
             lines.append("}")
         else:
-            lines.extend(emit_alu(16, aop, REG16[rm], f"0x{imm:04X}u",
+            lines.extend(emit_alu(16, aop, REG16[rm], f"0x{eff_imm:04X}u",
                                   lambda r: f"{REG16[rm]} = {r};", live))
         return lines
 
@@ -719,14 +760,15 @@ def emit_insn(ins, live, const_eng):
     if op in (0xA0, 0xA1, 0xA2, 0xA3):
         sidx = ins["seg_ovr"] if ins["seg_ovr"] >= 0 else 3
         sb = "eng" if (const_eng and sidx in (1, 2, 3)) else f"{SREG[sidx]}_base"
+        rdisp = reloc_disp(disp)
         if op == 0xA0:
-            return [set_r8_stmt(0, f"{sb}[0x{disp:04X}u]")]
+            return [set_r8_stmt(0, f"{sb}[0x{rdisp:04X}u]")]
         if op == 0xA1:
-            return [f"ax = R16({sb}, 0x{disp:04X}u);"]
+            return [f"ax = R16({sb}, 0x{rdisp:04X}u);"]
         if op == 0xA2:
-            return [f"{sb}[0x{disp:04X}u] = (uint8_t)ax;"]
+            return [f"{sb}[0x{rdisp:04X}u] = (uint8_t)ax;"]
         if op == 0xA3:
-            return [f"W16({sb}, 0x{disp:04X}u, ax);"]
+            return [f"W16({sb}, 0x{rdisp:04X}u, ax);"]
 
     if op == 0xA8:
         lines.append(f"{{ uint8_t _r = (uint8_t)((uint8_t)ax & 0x{imm:02X}u);")
@@ -750,7 +792,8 @@ def emit_insn(ins, live, const_eng):
     if 0xB0 <= op <= 0xB7:
         return [set_r8_stmt(op & 7, f"0x{imm:02X}u")]
     if 0xB8 <= op <= 0xBF:
-        return [f"{REG16[op & 7]} = 0x{imm:04X}u;"]
+        eff_imm = NEW_STACK_TOP if ip in STACK_PATCH_IPS else imm
+        return [f"{REG16[op & 7]} = 0x{eff_imm:04X}u;"]
 
     # RET / RETF
     if op == 0xC3:
@@ -1180,7 +1223,7 @@ def main():
     out.append("    uint8_t *ds_base = eng;")
     out.append("    uint8_t fl_cf = 0, fl_zf = 0, fl_sf = 0, fl_of = 0;")
     out.append("    uint64_t nodes = 0;")
-    out.append("    TTFrame tt_stack[36];")
+    out.append("    TTFrame tt_stack[136];")
     out.append("    if (__builtin_expect(ctx->tt_mask != 0, 0)) memset(tt_stack, 0, sizeof(tt_stack));")
     out.append("    (void)cs_base;")
     out.append("")
@@ -1257,7 +1300,7 @@ def main():
         elif ip == 0x5A55:
             out.append("    if (__builtin_expect(ctx->tt_mask != 0, 0)) {")
             out.append("        uint16_t _ply = bp >> 1;")
-            out.append("        if (_ply > 0u && _ply < 36u && tt_stack[_ply].active) {")
+            out.append("        if (_ply > 0u && _ply < 136u && tt_stack[_ply].active) {")
             out.append("            tt_stack[_ply].best_from = si; tt_stack[_ply].best_to = di;")
             out.append("        }")
             out.append("    }")

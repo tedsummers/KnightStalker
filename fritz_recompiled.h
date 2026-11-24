@@ -113,7 +113,7 @@ static void exec_fritz_recompiled_ctx(FritzCtx *ctx) {
     uint8_t *ds_base = eng;
     uint8_t fl_cf = 0, fl_zf = 0, fl_sf = 0, fl_of = 0;
     uint64_t nodes = 0;
-    TTFrame tt_stack[36];
+    TTFrame tt_stack[136];
     if (__builtin_expect(ctx->tt_mask != 0, 0)) memset(tt_stack, 0, sizeof(tt_stack));
     (void)cs_base;
 
@@ -760,7 +760,7 @@ L_3630:
     ax = (uint16_t)(cs);
     /* cli/sti */
     ss = ax; SET_SEG_BASE(ss, ss_base);
-    sp = 0x3630u;
+    sp = 0xFFF0u;
     /* cli/sti */
     ds = ax; SET_SEG_BASE(ds, ds_base);
     PUSH16(bx);
@@ -795,9 +795,9 @@ L_3660:
 L_3663:
     PUSH16(0x3666u); goto L_3B41;
 L_3666:
-    W16(ds_base, 0x0526u, (uint16_t)(0x0000u));
-    W16(ds_base, 0x045Au, (uint16_t)(0x0000u));
-    W16(ds_base, 0x04A0u, (uint16_t)(0x0000u));
+    W16(ds_base, 0x7E00u, (uint16_t)(0x0000u));
+    W16(ds_base, 0x7800u, (uint16_t)(0x0000u));
+    W16(ds_base, 0x7A00u, (uint16_t)(0x0000u));
     ax = (uint16_t)((ax & 0xFF00u) | (uint8_t)(ds_base[0x00E2u]));
     {
       uint8_t _a = (uint8_t)(ax); uint8_t _b = (uint8_t)(ax);
@@ -808,8 +808,8 @@ L_3666:
     if (fl_zf) goto L_36B0;
     PUSH16(0x3682u); goto L_3882;
 L_3682:
-    W16(ds_base, 0x04A0u, ax);
-    W16(ds_base, 0x04A4u, ax);
+    W16(ds_base, 0x7A00u, ax);
+    W16(ds_base, 0x7A04u, ax);
     ax = POP16();
     PUSH16(ax);
     { uint8_t _r = (uint8_t)((uint8_t)ax & 0x01u);
@@ -834,10 +834,10 @@ L_3696:
 L_369B:
     PUSH16(0x369Eu); goto L_3882;
 L_369E:
-    W16(ds_base, 0x045Au, ax);
-    W16(ds_base, 0x045Eu, ax);
-    W16(ds_base, 0x0526u, (uint16_t)(0x0041u));
-    W16(ds_base, 0x052Au, (uint16_t)(0x0041u));
+    W16(ds_base, 0x7800u, ax);
+    W16(ds_base, 0x7804u, ax);
+    W16(ds_base, 0x7E00u, (uint16_t)(0x0041u));
+    W16(ds_base, 0x7E04u, (uint16_t)(0x0041u));
 L_36B0:
     ax = POP16();
     { uint8_t _r = (uint8_t)((uint8_t)ax & 0x01u);
@@ -1017,8 +1017,8 @@ L_3778:
     dx = R16(ds_base, 0x040Cu);
     bp = 0x0000u;
     W16(ds_base, 0x0AC4u, (uint16_t)(dx));
-    W16(ds_base, 0x07B0u, (uint16_t)(0x0132u));
-    W16(ds_base, 0x07F0u, (uint16_t)(0x0132u));
+    W16(ds_base, 0x9200u, (uint16_t)(0x0132u));
+    W16(ds_base, 0x9400u, (uint16_t)(0x0132u));
     PUSH16(0x3796u); goto L_4C78;
 L_3796:
     cx = R16(ds_base, 0x0412u);
@@ -1049,7 +1049,7 @@ L_37A6:
 L_37B7:
     goto L_3831;
 L_37BA:
-    ax = (uint16_t)((ax & 0xFF00u) | (uint8_t)(ds_base[0x062Cu]));
+    ax = (uint16_t)((ax & 0xFF00u) | (uint8_t)(ds_base[0x8602u]));
     { uint8_t _r = (uint8_t)((uint8_t)ax & 0x80u);
       fl_cf = 0;
       fl_of = 0;
@@ -1342,7 +1342,7 @@ L_38C2:
     W16(ds_base, (uint16_t)(bx + 0x10u), (uint16_t)(ss));
     W16(ds_base, (uint16_t)(bx + 0x12u), (uint16_t)(sp));
     W16(ds_base, (uint16_t)(bx + 0x14u), (uint16_t)(bp));
-    bx = 0x3630u;
+    bx = 0xFFF0u;
     ax = R16(ds_base, (uint16_t)(bx + (uint16_t)(-2)));
     bx = R16(ds_base, (uint16_t)(bx + (uint16_t)(-4)));
     /* cli/sti */
@@ -1412,7 +1412,7 @@ L_3946:
     W16(ds_base, (uint16_t)(bx + 0x10u), (uint16_t)(ss));
     W16(ds_base, (uint16_t)(bx + 0x12u), (uint16_t)(sp));
     W16(ds_base, (uint16_t)(bx + 0x14u), (uint16_t)(bp));
-    bx = 0x3630u;
+    bx = 0xFFF0u;
     ax = R16(ds_base, (uint16_t)(bx + (uint16_t)(-2)));
     bx = R16(ds_base, (uint16_t)(bx + (uint16_t)(-4)));
     /* cli/sti */
@@ -1441,7 +1441,7 @@ L_3983:
     ip = POP16(); DISPATCH_IP();
 L_39AE:
     PUSH16(ax);
-    ax = R16(ds_base, 0x08EEu);
+    ax = R16(ds_base, 0x9C00u);
     {
       uint16_t _v = ax;
       _v = (uint16_t)(_v >> 1);
@@ -1477,7 +1477,7 @@ L_39C1:
     W16(ds_base, (uint16_t)(bx + 0x10u), (uint16_t)(ss));
     W16(ds_base, (uint16_t)(bx + 0x12u), (uint16_t)(sp));
     W16(ds_base, (uint16_t)(bx + 0x14u), (uint16_t)(bp));
-    bx = 0x3630u;
+    bx = 0xFFF0u;
     ax = R16(ds_base, (uint16_t)(bx + (uint16_t)(-2)));
     bx = R16(ds_base, (uint16_t)(bx + (uint16_t)(-4)));
     /* cli/sti */
@@ -1519,7 +1519,7 @@ L_3A29:
     W16(ds_base, (uint16_t)(bx + 0x10u), (uint16_t)(ss));
     W16(ds_base, (uint16_t)(bx + 0x12u), (uint16_t)(sp));
     W16(ds_base, (uint16_t)(bx + 0x14u), (uint16_t)(bp));
-    bx = 0x3630u;
+    bx = 0xFFF0u;
     ax = R16(ds_base, (uint16_t)(bx + (uint16_t)(-2)));
     bx = R16(ds_base, (uint16_t)(bx + (uint16_t)(-4)));
     /* cli/sti */
@@ -1634,9 +1634,9 @@ L_3ACC:
 L_3AFD:
     PUSH16(0x3B00u); goto L_3AB5;
 L_3B00:
-    W16(ds_base, 0x0526u, (uint16_t)(0x0000u));
-    W16(ds_base, 0x045Au, (uint16_t)(0x0000u));
-    W16(ds_base, 0x04A0u, (uint16_t)(0x0000u));
+    W16(ds_base, 0x7E00u, (uint16_t)(0x0000u));
+    W16(ds_base, 0x7800u, (uint16_t)(0x0000u));
+    W16(ds_base, 0x7A00u, (uint16_t)(0x0000u));
     si = 0x3AF5u;
     di = 0x0000u;
     cx = 0x0008u;
@@ -1711,7 +1711,7 @@ L_3B77:
     PUSH16(0x3B7Eu); goto L_4326;
 L_3B7E:
     ax = (uint16_t)((ax & 0xFF00u) | (uint8_t)(0x01u));
-    ds_base[0x062Au] = (uint8_t)ax;
+    ds_base[0x8600u] = (uint8_t)ax;
     if (fl_zf) goto L_3B87;
     {
       uint8_t _a = (uint8_t)(ax); uint8_t _b = 0x80u;
@@ -1723,7 +1723,7 @@ L_3B7E:
       ax = (uint16_t)((ax & 0xFF00u) | (uint8_t)(_r));
     }
 L_3B87:
-    ds_base[0x062Cu] = (uint8_t)ax;
+    ds_base[0x8602u] = (uint8_t)ax;
     ip = POP16(); DISPATCH_IP();
 L_3B8B:
     { uint8_t _a = (uint8_t)(dx >> 8); uint8_t _b = (uint8_t)(dx); dx = (uint16_t)((dx & 0xFF00u) | (uint8_t)(_a)); dx = (uint16_t)((dx & 0x00FFu) | ((uint16_t)(uint8_t)(_b) << 8)); }
@@ -1854,12 +1854,12 @@ L_3C2C:
     W16(ds_base, 0x040Cu, (uint16_t)(dx));
     W16(ds_base, 0x0A32u, (uint16_t)(0x0000u));
     W16(ds_base, 0x0A34u, (uint16_t)(0x0000u));
-    ax = R16(ds_base, 0x0526u);
-    W16(ds_base, 0x052Au, ax);
-    ax = R16(ds_base, 0x045Au);
-    W16(ds_base, 0x045Eu, ax);
-    ax = R16(ds_base, 0x04A0u);
-    W16(ds_base, 0x04A4u, ax);
+    ax = R16(ds_base, 0x7E00u);
+    W16(ds_base, 0x7E04u, ax);
+    ax = R16(ds_base, 0x7800u);
+    W16(ds_base, 0x7804u, ax);
+    ax = R16(ds_base, 0x7A00u);
+    W16(ds_base, 0x7A04u, ax);
     PUSH16(0x3C51u); goto L_3BA1;
 L_3C51:
     W16(ds_base, 0x041Cu, (uint16_t)(0x0000u));
@@ -2325,7 +2325,7 @@ L_3E27:
     }
     goto L_3E82;
 L_3E33:
-    { uint16_t _off = (uint16_t)(bp + 0x052Au);
+    { uint16_t _off = (uint16_t)(bp + 0x7E04u);
     {
       uint8_t _a = eng[_off]; uint8_t _b = 0x41u;
       uint8_t _r = (uint8_t)(_a - _b);
@@ -2335,7 +2335,7 @@ L_3E33:
     }
     }
     if (!fl_zf) goto L_3E78;
-    si = R16(eng, (uint16_t)(bp + 0x04A4u));
+    si = R16(eng, (uint16_t)(bp + 0x7A04u));
     { uint8_t _r = (uint8_t)(eng[(uint16_t)(si + (uint16_t)(-2))] & (uint8_t)(dx));
       fl_of = 0;
       fl_zf = (_r == 0);
@@ -2349,7 +2349,7 @@ L_3E33:
       fl_zf = (_r == 0);
     }
     if (!fl_zf) goto L_3E5C;
-    di = R16(eng, (uint16_t)(bp + 0x045Eu));
+    di = R16(eng, (uint16_t)(bp + 0x7804u));
     {
       uint16_t _a = di; uint16_t _b = si;
       uint32_t _res = (uint32_t)_a + (uint32_t)_b;
@@ -2389,7 +2389,7 @@ L_3E5C:
       fl_sf = (_r >> 7) & 1u;
     }
     if (!fl_zf) goto L_3E78;
-    di = R16(eng, (uint16_t)(bp + 0x045Eu));
+    di = R16(eng, (uint16_t)(bp + 0x7804u));
     {
       uint16_t _a = di; uint16_t _b = si;
       uint32_t _res = (uint32_t)_a + (uint32_t)_b;
@@ -2952,7 +2952,7 @@ L_407C:
       fl_sf = (_r >> 15) & 1u;
     }
     if (fl_zf) goto L_4074;
-    W16(eng, (uint16_t)(bp + 0x05ECu), (uint16_t)(bx));
+    W16(eng, (uint16_t)(bp + 0x8400u), (uint16_t)(bx));
     di = R16(eng, si);
     ip = R16(eng, (uint16_t)(di + 0x4084u)); DISPATCH_IP();
 L_4092:
@@ -3236,7 +3236,7 @@ L_41B5:
     ip = POP16_ENG(); DISPATCH_IP();
 L_41B9:
     {
-      uint16_t _off = (uint16_t)(bp + 0x062Cu);
+      uint16_t _off = (uint16_t)(bp + 0x8602u);
       uint8_t _v = eng[_off];
       uint8_t _r = (uint8_t)(_v & 0x80u);
       fl_zf = (_r == 0);
@@ -3546,7 +3546,7 @@ L_42E4:
     ip = POP16_ENG(); DISPATCH_IP();
 L_42E7:
     {
-      uint16_t _off = (uint16_t)(bp + 0x062Cu);
+      uint16_t _off = (uint16_t)(bp + 0x8602u);
       uint8_t _v = eng[_off];
       uint8_t _r = (uint8_t)(_v & 0x80u);
       fl_zf = (_r == 0);
@@ -4343,7 +4343,7 @@ L_4822:
       fl_sf = (_r >> 7) & 1u;
     }
     if (!fl_zf) goto L_4862;
-    { uint16_t _off = (uint16_t)(bp + 0x052Au);
+    { uint16_t _off = (uint16_t)(bp + 0x7E04u);
     {
       uint8_t _a = eng[_off]; uint8_t _b = 0x41u;
       uint8_t _r = (uint8_t)(_a - _b);
@@ -4353,9 +4353,9 @@ L_4822:
     }
     }
     if (!fl_zf) goto L_4876;
-    bx = R16(eng, (uint16_t)(bp + 0x045Eu));
+    bx = R16(eng, (uint16_t)(bp + 0x7804u));
     {
-      uint16_t _a = bx; uint16_t _b = R16(eng, (uint16_t)(bp + 0x04A4u));
+      uint16_t _a = bx; uint16_t _b = R16(eng, (uint16_t)(bp + 0x7A04u));
       uint32_t _res = (uint32_t)_a + (uint32_t)_b;
       uint16_t _r = (uint16_t)_res;
       bx = _r;
@@ -4460,7 +4460,7 @@ L_488A:
     ip = POP16_ENG(); DISPATCH_IP();
 L_4897:
     {
-      uint16_t _off = (uint16_t)(bp + 0x062Cu);
+      uint16_t _off = (uint16_t)(bp + 0x8602u);
       uint8_t _v = eng[_off];
       uint8_t _r = (uint8_t)(_v & 0x80u);
       fl_of = 0;
@@ -4649,7 +4649,7 @@ L_4911:
       fl_zf = (_r == 0);
     }
     if (!fl_zf) goto L_494D;
-    { uint16_t _off = (uint16_t)(bp + 0x052Au);
+    { uint16_t _off = (uint16_t)(bp + 0x7E04u);
     {
       uint8_t _a = eng[_off]; uint8_t _b = 0x41u;
       uint8_t _r = (uint8_t)(_a - _b);
@@ -4659,9 +4659,9 @@ L_4911:
     }
     }
     if (!fl_zf) goto L_490F;
-    bx = R16(eng, (uint16_t)(bp + 0x045Eu));
+    bx = R16(eng, (uint16_t)(bp + 0x7804u));
     {
-      uint16_t _a = bx; uint16_t _b = R16(eng, (uint16_t)(bp + 0x04A4u));
+      uint16_t _a = bx; uint16_t _b = R16(eng, (uint16_t)(bp + 0x7A04u));
       uint32_t _res = (uint32_t)_a + (uint32_t)_b;
       uint16_t _r = (uint16_t)_res;
       bx = _r;
@@ -4983,10 +4983,10 @@ L_4A90:
     ip = POP16_ENG(); DISPATCH_IP();
 L_4A94:
     NODE_POLL_CHECK();
-    ax = R16(eng, (uint16_t)(bp + 0x08EEu));
-    W16(eng, (uint16_t)(bp + 0x08F0u), (uint16_t)(ax));
+    ax = R16(eng, (uint16_t)(bp + 0x9C00u));
+    W16(eng, (uint16_t)(bp + 0x9C02u), (uint16_t)(ax));
     bx = R16(eng, (uint16_t)(di + 0x0100u));
-    W16(eng, (uint16_t)(bp + 0x056Cu), (uint16_t)(bx));
+    W16(eng, (uint16_t)(bp + 0x8000u), (uint16_t)(bx));
     bx = R16(eng, (uint16_t)(si + 0x0100u));
     W16(eng, (uint16_t)(di + 0x0100u), (uint16_t)(bx));
     W16(eng, (uint16_t)(bx + 0x02E0u), (uint16_t)(di));
@@ -4994,8 +4994,8 @@ L_4A94:
     bx = 0x0000u;
     eng[0x041Au] = (uint8_t)(0x00u);
     { uint16_t _off = si; uint16_t _a = R16(eng, _off); uint16_t _b = bx; bx = _a; W16(eng, _off, _b); }
-    W16(eng, (uint16_t)(bp + 0x04E6u), (uint16_t)(bx));
-    ax = R16(eng, (uint16_t)(bp + 0x066Au));
+    W16(eng, (uint16_t)(bp + 0x7C00u), (uint16_t)(bx));
+    ax = R16(eng, (uint16_t)(bp + 0x8800u));
     bp = bx;
     { uint16_t _t = di; di = si; si = _t; }
     { uint16_t _t = R16(eng, (uint16_t)(bp + 0x4CE8u)); PUSH16_ENG(0x4ACBu); ip = _t; DISPATCH_IP(); }
@@ -5052,8 +5052,8 @@ L_4AE7:
     }
     }
     bp = POP16_ENG();
-    W16(eng, (uint16_t)(bp + 0x052Cu), (uint16_t)(cx));
-    bx = R16(eng, (uint16_t)(bp + 0x056Cu));
+    W16(eng, (uint16_t)(bp + 0x7E06u), (uint16_t)(cx));
+    bx = R16(eng, (uint16_t)(bp + 0x8000u));
     W16(eng, (uint16_t)(bx + 0x02E0u), (uint16_t)(0x0000u));
     ip = POP16_ENG(); DISPATCH_IP();
 L_4AFF:
@@ -5067,7 +5067,7 @@ L_4AFF:
     }
     if ((!fl_zf && (fl_sf == fl_of))) goto L_4B0A;
     bp = POP16_ENG();
-    W16(eng, (uint16_t)(bp + 0x052Cu), (uint16_t)(cx));
+    W16(eng, (uint16_t)(bp + 0x7E06u), (uint16_t)(cx));
     ip = POP16_ENG(); DISPATCH_IP();
 L_4B0A:
     {
@@ -5081,17 +5081,17 @@ L_4B0A:
     if (fl_cf) goto L_4B42;
     if (fl_zf) goto L_4B17;
     bp = POP16_ENG();
-    W16(eng, (uint16_t)(bp + 0x052Cu), (uint16_t)(cx));
+    W16(eng, (uint16_t)(bp + 0x7E06u), (uint16_t)(cx));
     ip = POP16_ENG(); DISPATCH_IP();
 L_4B17:
     bp = POP16_ENG();
     PUSH16_ENG(di);
     PUSH16_ENG(bp);
-    di = R16(eng, (uint16_t)(bp + 0x04A4u));
+    di = R16(eng, (uint16_t)(bp + 0x7A04u));
     eng[di] = (uint8_t)(0x00u);
     bx = R16(eng, (uint16_t)(di + 0x0100u));
     W16(eng, (uint16_t)(bx + 0x02E0u), (uint16_t)(0x0000u));
-    W16(eng, (uint16_t)(bp + 0x056Cu), (uint16_t)(bx));
+    W16(eng, (uint16_t)(bp + 0x8000u), (uint16_t)(bx));
     {
       uint16_t _a = ax; uint16_t _b = 0x0100u;
       uint32_t _res = (uint32_t)_a + (uint32_t)_b;
@@ -5115,7 +5115,7 @@ L_4B17:
     }
     bp = POP16_ENG();
     di = POP16_ENG();
-    W16(eng, (uint16_t)(bp + 0x052Cu), (uint16_t)(cx));
+    W16(eng, (uint16_t)(bp + 0x7E06u), (uint16_t)(cx));
     ip = POP16_ENG(); DISPATCH_IP();
 L_4B42:
     PUSH16_ENG(di);
@@ -5156,7 +5156,7 @@ L_4B42:
     }
     di = POP16_ENG();
     bp = POP16_ENG();
-    W16(eng, (uint16_t)(bp + 0x052Cu), (uint16_t)(cx));
+    W16(eng, (uint16_t)(bp + 0x7E06u), (uint16_t)(cx));
     ip = POP16_ENG(); DISPATCH_IP();
 L_4B72:
     di = (uint16_t)(di + (uint16_t)(-4));
@@ -5189,13 +5189,13 @@ L_4B72:
     }
     di = POP16_ENG();
     bp = POP16_ENG();
-    W16(eng, (uint16_t)(bp + 0x052Cu), (uint16_t)(cx));
+    W16(eng, (uint16_t)(bp + 0x7E06u), (uint16_t)(cx));
     ip = POP16_ENG(); DISPATCH_IP();
 L_4BDE:
     bx = R16(eng, (uint16_t)(di + 0x0100u));
     W16(eng, (uint16_t)(si + 0x0100u), (uint16_t)(bx));
     W16(eng, (uint16_t)(bx + 0x02E0u), (uint16_t)(si));
-    cx = R16(eng, (uint16_t)(bp + 0x052Cu));
+    cx = R16(eng, (uint16_t)(bp + 0x7E06u));
     bx = R16(eng, di);
     bx = (uint16_t)((bx & 0xFF00u) | (uint8_t)((uint8_t)(cx)));
     {
@@ -5206,11 +5206,11 @@ L_4BDE:
     }
     eng[di] = (uint8_t)((uint8_t)(bx));
     if (fl_zf) goto L_4C05;
-    bx = R16(eng, (uint16_t)(bp + 0x056Cu));
+    bx = R16(eng, (uint16_t)(bp + 0x8000u));
     W16(eng, (uint16_t)(di + 0x0100u), (uint16_t)(bx));
     W16(eng, (uint16_t)(bx + 0x02E0u), (uint16_t)(di));
 L_4C05:
-    bx = R16(eng, (uint16_t)(bp + 0x04E6u));
+    bx = R16(eng, (uint16_t)(bp + 0x7C00u));
     W16(eng, si, (uint16_t)(bx));
     {
       uint16_t _a = di; uint16_t _b = R16(eng, 0x0408u);
@@ -5276,8 +5276,8 @@ L_4C43:
     ip = POP16_ENG(); DISPATCH_IP();
 L_4C5E:
     PUSH16_ENG(di);
-    di = R16(eng, (uint16_t)(bp + 0x04A4u));
-    bx = R16(eng, (uint16_t)(bp + 0x056Cu));
+    di = R16(eng, (uint16_t)(bp + 0x7A04u));
+    bx = R16(eng, (uint16_t)(bp + 0x8000u));
     W16(eng, (uint16_t)(di + 0x0100u), (uint16_t)(bx));
     W16(eng, (uint16_t)(bx + 0x02E0u), (uint16_t)(di));
     bx = (uint16_t)((bx & 0xFF00u) | (uint8_t)((uint8_t)(dx >> 8)));
@@ -5314,7 +5314,7 @@ L_4C94:
     PUSH16_ENG(0x4C97u); goto L_4CB4;
 L_4C97:
     bx = R16(eng, (uint16_t)(si + 0x0100u));
-    { uint16_t _t = R16(eng, (uint16_t)(bp + 0x05ACu)); PUSH16_ENG(0x4C9Fu); ip = _t; DISPATCH_IP(); }
+    { uint16_t _t = R16(eng, (uint16_t)(bp + 0x8200u)); PUSH16_ENG(0x4C9Fu); ip = _t; DISPATCH_IP(); }
 L_4C9F:
     if (!fl_cf) goto L_4C94;
 L_4CA1:
@@ -5324,14 +5324,14 @@ L_4CA4:
 L_4CA6:
     PUSH16_ENG(0x4CA9u); goto L_4CB4;
 L_4CA9:
-    bx = R16(eng, (uint16_t)(bp + 0x05ECu));
-    { uint16_t _t = R16(eng, (uint16_t)(bp + 0x05ACu)); PUSH16_ENG(0x4CB1u); ip = _t; DISPATCH_IP(); }
+    bx = R16(eng, (uint16_t)(bp + 0x8400u));
+    { uint16_t _t = R16(eng, (uint16_t)(bp + 0x8200u)); PUSH16_ENG(0x4CB1u); ip = _t; DISPATCH_IP(); }
 L_4CB1:
     if (!fl_cf) goto L_4CA6;
 L_4CB3:
     ip = POP16_ENG(); DISPATCH_IP();
 L_4CB4:
-    W16(eng, (uint16_t)(bp + 0x05ACu), (uint16_t)(ax));
+    W16(eng, (uint16_t)(bp + 0x8200u), (uint16_t)(ax));
 L_4CB8:
     PUSH16_ENG(0x4CBBu); goto L_4A94;
 L_4CBB:
@@ -5349,7 +5349,7 @@ L_4CC3:
       ax = (uint16_t)((ax & 0x00FFu) | ((uint16_t)(uint8_t)(_r) << 8));
     }
     W16(eng, (uint16_t)(bx + 0x12A6u), (uint16_t)(ax));
-    cx = R16(eng, (uint16_t)(bp + 0x052Cu));
+    cx = R16(eng, (uint16_t)(bp + 0x7E06u));
     W16(eng, (uint16_t)(bx + 0x1206u), (uint16_t)(cx));
     { uint16_t _off = 0x0412u;
     {
@@ -7442,7 +7442,7 @@ L_53C8:
       ax = _r;
     }
     {
-      uint16_t _a = ax; uint16_t _b = R16(eng, 0x066Au);
+      uint16_t _a = ax; uint16_t _b = R16(eng, 0x8800u);
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_zf = (_r == 0);
@@ -7464,7 +7464,7 @@ L_53DB:
       ax = _r;
     }
     {
-      uint16_t _a = ax; uint16_t _b = R16(eng, 0x066Au);
+      uint16_t _a = ax; uint16_t _b = R16(eng, 0x8800u);
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -7695,7 +7695,7 @@ L_54BE:
       bx = _r;
     }
 L_54D5:
-    W16(eng, 0x066Au, (uint16_t)(bx));
+    W16(eng, 0x8800u, (uint16_t)(bx));
     di = 0x017Eu;
     /* nop */
     bx = 0x0100u;
@@ -8074,11 +8074,11 @@ L_568F:
     ip = POP16_ENG(); DISPATCH_IP();
 L_5691:
     ax = 0x0000u;
-    W16(eng, 0x06EAu, ax);
-    W16(eng, 0x06ECu, ax);
-    W16(eng, 0x08EEu, (uint16_t)(0x0000u));
-    W16(eng, 0x07B0u, (uint16_t)(0x0132u));
-    W16(eng, 0x07F0u, (uint16_t)(0x0132u));
+    W16(eng, 0x8C02u, ax);
+    W16(eng, 0x8C04u, ax);
+    W16(eng, 0x9C00u, (uint16_t)(0x0000u));
+    W16(eng, 0x9200u, (uint16_t)(0x0132u));
+    W16(eng, 0x9400u, (uint16_t)(0x0132u));
     PUSH16_ENG(0x56AFu); goto L_5442;
 L_56AF:
     PUSH16_ENG(0x56B2u); goto L_4C78;
@@ -8135,7 +8135,7 @@ L_56E3:
     if ((fl_cf || fl_zf)) goto L_5715;
     ax = R16(eng, 0x0416u);
     {
-      uint16_t _a = ax; uint16_t _b = R16(eng, 0x08EEu);
+      uint16_t _a = ax; uint16_t _b = R16(eng, 0x9C00u);
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -8143,7 +8143,7 @@ L_56E3:
       fl_sf = (_r >> 15) & 1u;
     }
     if ((fl_cf || fl_zf)) goto L_5715;
-    { uint16_t _off = 0x08EEu;
+    { uint16_t _off = 0x9C00u;
     {
       uint16_t _a = R16(eng, _off); uint16_t _b = 0x0002u;
       uint32_t _res = (uint32_t)_a + (uint32_t)_b;
@@ -8151,7 +8151,7 @@ L_56E3:
       W16(eng, _off, _r);
     }
     }
-    ax = R16(eng, 0x06ACu);
+    ax = R16(eng, 0x8A00u);
     {
       uint16_t _a = ax; uint16_t _b = 0xFE00u;
       uint16_t _r = (uint16_t)(_a - _b);
@@ -8166,8 +8166,8 @@ L_56E3:
       uint16_t _r = (uint16_t)(_a - _b);
       ax = _r;
     }
-    W16(eng, 0x06ECu, ax);
-    W16(eng, 0x06E8u, ax);
+    W16(eng, 0x8C04u, ax);
+    W16(eng, 0x8C00u, ax);
     {
       uint16_t _a = ax; uint16_t _b = 0x00A0u;
       uint32_t _res = (uint32_t)_a + (uint32_t)_b;
@@ -8180,7 +8180,7 @@ L_56E3:
       fl_cf = (0u < _v);
       ax = _r;
     }
-    W16(eng, 0x06EAu, ax);
+    W16(eng, 0x8C02u, ax);
     goto L_56BB;
 L_5715:
     si = R16(eng, 0x10C6u);
@@ -8193,7 +8193,7 @@ L_5722:
     cx = R16(eng, (uint16_t)(bx + 0x1206u));
     PUSH16_ENG(0x5731u); goto L_389E;
 L_5731:
-    { uint16_t _off = (uint16_t)(bp + 0x062Eu);
+    { uint16_t _off = (uint16_t)(bp + 0x8604u);
     {
       uint8_t _a = eng[_off]; uint8_t _b = 0xFDu;
       uint8_t _r = (uint8_t)(_a & _b);
@@ -8205,8 +8205,8 @@ L_5731:
     }
     }
     eng[0x041Bu] = (uint8_t)(0x80u);
-    W16(eng, (uint16_t)(bp + 0x08B0u), (uint16_t)(0x0000u));
-    W16(eng, (uint16_t)(bp + 0x1488u), (uint16_t)(0x0000u));
+    W16(eng, (uint16_t)(bp + 0x9A02u), (uint16_t)(0x0000u));
+    W16(eng, (uint16_t)(bp + 0x9E02u), (uint16_t)(0x0000u));
     bx = R16(eng, 0x0414u);
     ax = R16(eng, (uint16_t)(bx + 0x1346u));
     bx = R16(eng, (uint16_t)(bx + 0x13E6u));
@@ -8214,10 +8214,10 @@ L_5731:
 L_5754:
     W16(eng, (uint16_t)(bx + 0x12A6u), (uint16_t)(ax));
     PUSH16_ENG(ax);
-    ax = R16(eng, 0x07B2u);
-    cx = R16(eng, 0x07F2u);
+    ax = R16(eng, 0x9202u);
+    cx = R16(eng, 0x9402u);
     {
-      uint16_t _off = (uint16_t)(bp + 0x062Eu);
+      uint16_t _off = (uint16_t)(bp + 0x8604u);
       uint8_t _v = eng[_off];
       uint8_t _r = (uint8_t)(_v & 0x02u);
       fl_zf = (_r == 0);
@@ -8232,9 +8232,9 @@ L_576F:
       fl_sf = (_r >> 15) & 1u;
     }
     if (!fl_zf) goto L_577C;
-    ax = R16(eng, 0x06ACu);
+    ax = R16(eng, 0x8A00u);
     {
-      uint16_t _a = ax; uint16_t _b = R16(eng, 0x06E8u);
+      uint16_t _a = ax; uint16_t _b = R16(eng, 0x8C00u);
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -8255,15 +8255,15 @@ L_577F:
       fl_sf = (_r >> 15) & 1u;
       ax = _r;
     }
-    W16(eng, 0x06EAu, ax);
-    W16(eng, 0x06ECu, (uint16_t)(0x0000u));
-    W16(eng, 0x06E8u, (uint16_t)(0x0000u));
-    W16(eng, 0x06ACu, (uint16_t)(0x0000u));
+    W16(eng, 0x8C02u, ax);
+    W16(eng, 0x8C04u, (uint16_t)(0x0000u));
+    W16(eng, 0x8C00u, (uint16_t)(0x0000u));
+    W16(eng, 0x8A00u, (uint16_t)(0x0000u));
     ax = POP16_ENG();
     fl_cf = 1;
     ip = POP16_ENG(); DISPATCH_IP();
 L_5799:
-    W16(eng, 0x06ACu, (uint16_t)(0x0000u));
+    W16(eng, 0x8A00u, (uint16_t)(0x0000u));
     bx = 0x0000u;
 L_57A2:
     W16(eng, 0x0414u, (uint16_t)(bx));
@@ -8282,8 +8282,8 @@ L_57A9:
 L_57B0:
     goto L_57BF;
 L_57B2:
-    W16(eng, 0x07B2u, ax);
-    W16(eng, 0x07F2u, (uint16_t)(bx));
+    W16(eng, 0x9202u, ax);
+    W16(eng, 0x9402u, (uint16_t)(bx));
     PUSH16_ENG(0x57BCu); goto L_4A94;
 L_57BC:
     PUSH16_ENG(0x57BFu); goto L_58BA;
@@ -8322,24 +8322,24 @@ L_57DC:
 L_57E0:
     cx = ax;
     {
-      uint16_t _a = ax; uint16_t _b = R16(eng, 0x06EAu);
+      uint16_t _a = ax; uint16_t _b = R16(eng, 0x8C02u);
       uint32_t _res = (uint32_t)_a + (uint32_t)_b;
       uint16_t _r = (uint16_t)_res;
       fl_cf = (_res > 0xFFFFu);
       ax = _r;
     }
     if (!fl_cf) goto L_57F6;
-    W16(eng, 0x06EAu, (uint16_t)(0x0000u));
-    W16(eng, 0x06ACu, (uint16_t)(0x0000u));
+    W16(eng, 0x8C02u, (uint16_t)(0x0000u));
+    W16(eng, 0x8A00u, (uint16_t)(0x0000u));
     goto L_57A2;
 L_57F6:
-    ax = R16(eng, 0x06ACu);
-    W16(eng, 0x06ECu, ax);
+    ax = R16(eng, 0x8A00u);
+    W16(eng, 0x8C04u, ax);
     {
       uint16_t _v = ax;
       ax = (uint16_t)(~_v);
     }
-    W16(eng, 0x06EAu, ax);
+    W16(eng, 0x8C02u, ax);
     bx = (uint16_t)(bx + 1u);
     bx = (uint16_t)(bx + 1u);
     {
@@ -8361,13 +8361,13 @@ L_580E:
     PUSH16_ENG(ax);
     PUSH16_ENG(0x5813u); goto L_392A;
 L_5813:
-    ax = R16(eng, 0x07B2u);
-    W16(eng, 0x072Cu, ax);
-    ax = R16(eng, 0x07F2u);
-    W16(eng, 0x076Eu, ax);
+    ax = R16(eng, 0x9202u);
+    W16(eng, 0x8E02u, ax);
+    ax = R16(eng, 0x9402u);
+    W16(eng, 0x9002u, ax);
     ax = POP16_ENG();
     {
-      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x06ECu));
+      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x8C04u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -8375,22 +8375,22 @@ L_5813:
       fl_sf = (_r >> 15) & 1u;
     }
     if (fl_cf) goto L_583A;
-    W16(eng, (uint16_t)(bp + 0x06ECu), (uint16_t)(ax));
-    W16(eng, 0x072Eu, (uint16_t)(si));
-    W16(eng, 0x0770u, (uint16_t)(di));
-    W16(eng, 0x07B0u, (uint16_t)(si));
-    W16(eng, 0x07F0u, (uint16_t)(di));
+    W16(eng, (uint16_t)(bp + 0x8C04u), (uint16_t)(ax));
+    W16(eng, 0x8E04u, (uint16_t)(si));
+    W16(eng, 0x9004u, (uint16_t)(di));
+    W16(eng, 0x9200u, (uint16_t)(si));
+    W16(eng, 0x9400u, (uint16_t)(di));
 L_583A:
     ip = POP16_ENG(); DISPATCH_IP();
 L_583B:
     {
-      uint16_t _a = si; uint16_t _b = R16(eng, (uint16_t)(bp + 0x072Au));
+      uint16_t _a = si; uint16_t _b = R16(eng, (uint16_t)(bp + 0x8E00u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_zf = (_r == 0);
     }
     if (!fl_zf) goto L_5848;
     {
-      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x076Cu));
+      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x9000u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -8401,13 +8401,13 @@ L_583B:
     ip = POP16_ENG(); DISPATCH_IP();
 L_5848:
     {
-      uint16_t _a = si; uint16_t _b = R16(eng, (uint16_t)(bp + 0x0830u));
+      uint16_t _a = si; uint16_t _b = R16(eng, (uint16_t)(bp + 0x9600u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_zf = (_r == 0);
     }
     if (!fl_zf) goto L_5855;
     {
-      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x0870u));
+      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x9800u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -8418,13 +8418,13 @@ L_5848:
     ip = POP16_ENG(); DISPATCH_IP();
 L_5855:
     {
-      uint16_t _a = si; uint16_t _b = R16(eng, (uint16_t)(bp + 0x07B0u));
+      uint16_t _a = si; uint16_t _b = R16(eng, (uint16_t)(bp + 0x9200u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_zf = (_r == 0);
     }
     if (!fl_zf) goto L_5862;
     {
-      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x07F0u));
+      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x9400u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -8435,7 +8435,7 @@ L_5855:
     ip = POP16_ENG(); DISPATCH_IP();
 L_5862:
     {
-      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x08AEu));
+      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x9A00u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -8445,10 +8445,10 @@ L_5862:
     if (!fl_zf) goto L_5869;
     ip = POP16_ENG(); DISPATCH_IP();
 L_5869:
-    W16(eng, (uint16_t)(bp + 0x1488u), (uint16_t)(0x0000u));
-    W16(eng, (uint16_t)(bp + 0x08B0u), (uint16_t)(di));
+    W16(eng, (uint16_t)(bp + 0x9E02u), (uint16_t)(0x0000u));
+    W16(eng, (uint16_t)(bp + 0x9A02u), (uint16_t)(di));
     {
-      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x045Cu));
+      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x7802u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -8457,7 +8457,7 @@ L_5869:
     }
     if (!fl_zf) goto L_58AE;
     {
-      uint16_t _a = si; uint16_t _b = R16(eng, (uint16_t)(bp + 0x04A2u));
+      uint16_t _a = si; uint16_t _b = R16(eng, (uint16_t)(bp + 0x7A02u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -8465,9 +8465,9 @@ L_5869:
       fl_sf = (_r >> 15) & 1u;
     }
     if (!fl_zf) goto L_58AE;
-    bx = R16(eng, (uint16_t)(bp + 0x04A4u));
+    bx = R16(eng, (uint16_t)(bp + 0x7A04u));
     {
-      uint16_t _a = bx; uint16_t _b = R16(eng, (uint16_t)(bp + 0x045Au));
+      uint16_t _a = bx; uint16_t _b = R16(eng, (uint16_t)(bp + 0x7800u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -8475,9 +8475,9 @@ L_5869:
       fl_sf = (_r >> 15) & 1u;
     }
     if (!fl_zf) goto L_58AE;
-    bx = R16(eng, (uint16_t)(bp + 0x045Eu));
+    bx = R16(eng, (uint16_t)(bp + 0x7804u));
     {
-      uint16_t _a = bx; uint16_t _b = R16(eng, (uint16_t)(bp + 0x04A0u));
+      uint16_t _a = bx; uint16_t _b = R16(eng, (uint16_t)(bp + 0x7A00u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -8486,7 +8486,7 @@ L_5869:
     }
     if (!fl_zf) goto L_58AE;
     {
-      uint16_t _off = (uint16_t)(bp + 0x0528u);
+      uint16_t _off = (uint16_t)(bp + 0x7E02u);
       uint8_t _v = eng[_off];
       uint8_t _r = (uint8_t)(_v & 0xB0u);
       fl_cf = 0;
@@ -8496,7 +8496,7 @@ L_5869:
     }
     if (!fl_zf) goto L_58AE;
     {
-      uint16_t _off = (uint16_t)(bp + 0x0526u);
+      uint16_t _off = (uint16_t)(bp + 0x7E00u);
       uint8_t _v = eng[_off];
       uint8_t _r = (uint8_t)(_v & 0xB0u);
       fl_cf = 0;
@@ -8511,11 +8511,11 @@ L_58A4:
 L_58A7:
     goto L_5A45;
 L_58AA:
-    W16(eng, (uint16_t)(bp + 0x08B0u), (uint16_t)(di));
+    W16(eng, (uint16_t)(bp + 0x9A02u), (uint16_t)(di));
 L_58AE:
     PUSH16_ENG(0x58B1u); goto L_4A94;
 L_58B1:
-    W16(eng, (uint16_t)(bp + 0x08B0u), (uint16_t)(di));
+    W16(eng, (uint16_t)(bp + 0x9A02u), (uint16_t)(di));
     eng[0x041Bu] = (uint8_t)(0x00u);
 L_58BA:
     {
@@ -8530,7 +8530,7 @@ L_58C2:
     if (fl_cf) goto L_58A7;
 L_58C4:
     {
-      uint16_t _a = bp; uint16_t _b = R16(eng, (uint16_t)(bp + 0x08F0u));
+      uint16_t _a = bp; uint16_t _b = R16(eng, (uint16_t)(bp + 0x9C02u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_zf = (_r == 0);
@@ -8538,7 +8538,7 @@ L_58C4:
     if ((!fl_cf && !fl_zf)) goto L_58E0;
     if (fl_cf) goto L_58D3;
     {
-      uint16_t _off = (uint16_t)(bp + 0x062Cu);
+      uint16_t _off = (uint16_t)(bp + 0x8602u);
       uint8_t _v = eng[_off];
       uint8_t _r = (uint8_t)(_v & 0x80u);
       fl_zf = (_r == 0);
@@ -8549,7 +8549,7 @@ L_58D3:
 L_58D6:
     if (!fl_zf) goto L_592F;
     {
-      uint16_t _a = bp; uint16_t _b = 0x0038u;
+      uint16_t _a = bp; uint16_t _b = 0x0100u;
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_zf = (_r == 0);
@@ -8558,14 +8558,14 @@ L_58D6:
     goto L_5AAA;
 L_58E0:
     {
-      uint16_t _off = (uint16_t)(bp + 0x062Cu);
+      uint16_t _off = (uint16_t)(bp + 0x8602u);
       uint8_t _v = eng[_off];
       uint8_t _r = (uint8_t)(_v & 0x01u);
       fl_zf = (_r == 0);
     }
     if (!fl_zf) goto L_590E;
     {
-      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x06ECu));
+      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x8C04u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_zf = (_r == 0);
@@ -8598,7 +8598,7 @@ L_5905:
     goto L_4BDE;
 L_590E:
     {
-      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x06ECu));
+      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x8C04u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_zf = (_r == 0);
@@ -8612,7 +8612,7 @@ L_5919:
 L_591C:
     if (!fl_zf) goto L_592F;
     {
-      uint16_t _a = bp; uint16_t _b = 0x0038u;
+      uint16_t _a = bp; uint16_t _b = 0x0100u;
       fl_cf = (_a < _b);
     }
     if (!fl_cf) goto L_5932;
@@ -8630,7 +8630,7 @@ L_5932:
     goto L_5A45;
 L_5935:
     {
-      uint16_t _a = bp; uint16_t _b = 0x0038u;
+      uint16_t _a = bp; uint16_t _b = 0x0100u;
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_zf = (_r == 0);
@@ -8639,15 +8639,15 @@ L_5935:
     PUSH16_ENG(0x593Du); goto L_44AB;
 L_593D:
     if (!fl_zf) goto L_5923;
-    eng[(uint16_t)(bp + 0x062Eu)] = (uint8_t)(0x00u);
-    W16(eng, (uint16_t)(bp + 0x066Cu), (uint16_t)(ax));
+    eng[(uint16_t)(bp + 0x8604u)] = (uint8_t)(0x00u);
+    W16(eng, (uint16_t)(bp + 0x8802u), (uint16_t)(ax));
     {
       uint16_t _v = ax;
       uint16_t _r = (uint16_t)(0u - _v);
       ax = _r;
     }
-    W16(eng, (uint16_t)(bp + 0x06AEu), (uint16_t)(ax));
-    bx = R16(eng, (uint16_t)(bp + 0x06EAu));
+    W16(eng, (uint16_t)(bp + 0x8A02u), (uint16_t)(ax));
+    bx = R16(eng, (uint16_t)(bp + 0x8C02u));
     {
       uint16_t _a = bx; uint16_t _b = ax;
       fl_cf = (_a < _b);
@@ -8655,9 +8655,9 @@ L_593D:
     if (!fl_cf) goto L_5958;
     bx = ax;
 L_5958:
-    W16(eng, (uint16_t)(bp + 0x06EEu), (uint16_t)(bx));
-    W16(eng, (uint16_t)(bp + 0x0460u), (uint16_t)(si));
-    W16(eng, (uint16_t)(bp + 0x04A6u), (uint16_t)(di));
+    W16(eng, (uint16_t)(bp + 0x8C06u), (uint16_t)(bx));
+    W16(eng, (uint16_t)(bp + 0x7806u), (uint16_t)(si));
+    W16(eng, (uint16_t)(bp + 0x7A06u), (uint16_t)(di));
     bp = (uint16_t)(bp + 1u);
     bp = (uint16_t)(bp + 1u);
     { uint8_t _a = (uint8_t)(dx >> 8); uint8_t _b = (uint8_t)(dx); dx = (uint16_t)((dx & 0xFF00u) | (uint8_t)(_a)); dx = (uint16_t)((dx & 0x00FFu) | ((uint16_t)(uint8_t)(_b) << 8)); }
@@ -8674,7 +8674,7 @@ L_5958:
       fl_sf = (_r >> 7) & 1u;
     }
     if (!fl_zf) goto L_598E;
-    di = R16(eng, (uint16_t)(bp + 0x08AEu));
+    di = R16(eng, (uint16_t)(bp + 0x9A00u));
     PUSH16_ENG(0x5980u); goto L_427C;
 L_5980:
     if (fl_cf) goto L_598E;
@@ -8686,8 +8686,8 @@ L_5985:
 L_598C:
     if (!fl_cf) goto L_5982;
 L_598E:
-    si = R16(eng, (uint16_t)(bp + 0x07B0u));
-    di = R16(eng, (uint16_t)(bp + 0x07F0u));
+    si = R16(eng, (uint16_t)(bp + 0x9200u));
+    di = R16(eng, (uint16_t)(bp + 0x9400u));
     PUSH16_ENG(0x5999u); goto L_48E1;
 L_5999:
     if (fl_cf) goto L_599E;
@@ -8700,8 +8700,8 @@ L_59A4:
     if (fl_cf) goto L_59A9;
     PUSH16_ENG(0x59A9u); goto L_5855;
 L_59A9:
-    si = R16(eng, (uint16_t)(bp + 0x072Au));
-    di = R16(eng, (uint16_t)(bp + 0x076Cu));
+    si = R16(eng, (uint16_t)(bp + 0x8E00u));
+    di = R16(eng, (uint16_t)(bp + 0x9000u));
     PUSH16_ENG(0x59B4u); goto L_48E1;
 L_59B4:
     if (fl_cf) goto L_59B9;
@@ -8711,11 +8711,11 @@ L_59B9:
 L_59BC:
     if (fl_cf) goto L_59CF;
 L_59BE:
-    W16(eng, (uint16_t)(bp + 0x05ACu), (uint16_t)(ax));
+    W16(eng, (uint16_t)(bp + 0x8200u), (uint16_t)(ax));
     PUSH16_ENG(0x59C5u); goto L_583B;
 L_59C5:
     bx = R16(eng, (uint16_t)(si + 0x0100u));
-    { uint16_t _t = R16(eng, (uint16_t)(bp + 0x05ACu)); PUSH16_ENG(0x59CDu); ip = _t; DISPATCH_IP(); }
+    { uint16_t _t = R16(eng, (uint16_t)(bp + 0x8200u)); PUSH16_ENG(0x59CDu); ip = _t; DISPATCH_IP(); }
 L_59CD:
     if (!fl_cf) goto L_59BE;
 L_59CF:
@@ -8761,10 +8761,10 @@ L_59EB:
     ax = R16(eng, 0x0408u);
     { uint16_t _off = 0x040Au; uint16_t _a = R16(eng, _off); uint16_t _b = ax; ax = _a; W16(eng, _off, _b); }
     W16(eng, 0x0408u, ax);
-    si = R16(eng, (uint16_t)(bp + 0x0460u));
-    di = R16(eng, (uint16_t)(bp + 0x04A6u));
-    bx = (uint16_t)((bx & 0xFF00u) | (uint8_t)(eng[(uint16_t)(bp + 0x062Eu)]));
-    ax = R16(eng, (uint16_t)(bp + 0x06AEu));
+    si = R16(eng, (uint16_t)(bp + 0x7806u));
+    di = R16(eng, (uint16_t)(bp + 0x7A06u));
+    bx = (uint16_t)((bx & 0xFF00u) | (uint8_t)(eng[(uint16_t)(bp + 0x8604u)]));
+    ax = R16(eng, (uint16_t)(bp + 0x8A02u));
     {
       uint16_t _v = ax;
       uint16_t _r = (uint16_t)(0u - _v);
@@ -8790,10 +8790,10 @@ L_5A19:
       fl_zf = (_r == 0);
     }
     if (fl_zf) goto L_5A41;
-    bx = R16(eng, (uint16_t)(bp + 0x0772u));
-    W16(eng, (uint16_t)(bp + 0x07F2u), (uint16_t)(bx));
-    cx = R16(eng, (uint16_t)(bp + 0x0730u));
-    W16(eng, (uint16_t)(bp + 0x07B2u), (uint16_t)(cx));
+    bx = R16(eng, (uint16_t)(bp + 0x9006u));
+    W16(eng, (uint16_t)(bp + 0x9402u), (uint16_t)(bx));
+    cx = R16(eng, (uint16_t)(bp + 0x8E06u));
+    W16(eng, (uint16_t)(bp + 0x9202u), (uint16_t)(cx));
     cx = (uint16_t)((cx & 0x00FFu) | ((uint16_t)(uint8_t)((uint8_t)(bx)) << 8));
     bx = R16(eng, (uint16_t)(si + 0x6DFAu));
     {
@@ -8833,7 +8833,7 @@ L_5A48:
     }
     if (!fl_zf) goto L_5A9C;
     {
-      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x06ACu));
+      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x8A00u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -8843,11 +8843,11 @@ L_5A48:
     if ((fl_cf || fl_zf)) goto L_5AA0;
     if (__builtin_expect(ctx->tt_mask != 0, 0)) {
         uint16_t _ply = bp >> 1;
-        if (_ply > 0u && _ply < 36u && tt_stack[_ply].active) {
+        if (_ply > 0u && _ply < 136u && tt_stack[_ply].active) {
             tt_stack[_ply].best_from = si; tt_stack[_ply].best_to = di;
         }
     }
-    W16(eng, (uint16_t)(bp + 0x06ACu), (uint16_t)(ax));
+    W16(eng, (uint16_t)(bp + 0x8A00u), (uint16_t)(ax));
     { uint16_t _r = (uint16_t)(bp & bp);
       fl_cf = 0;
       fl_of = 0;
@@ -8856,7 +8856,7 @@ L_5A48:
     }
     if (fl_zf) goto L_5A99;
     {
-      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x06ECu));
+      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x8C04u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -8864,16 +8864,16 @@ L_5A48:
       fl_sf = (_r >> 15) & 1u;
     }
     if ((fl_cf || fl_zf)) goto L_5AA0;
-    W16(eng, (uint16_t)(bp + 0x06ECu), (uint16_t)(ax));
+    W16(eng, (uint16_t)(bp + 0x8C04u), (uint16_t)(ax));
     {
-      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x08AEu));
+      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x9A00u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_zf = (_r == 0);
     }
     if (fl_zf) goto L_5A87;
-    W16(eng, (uint16_t)(bp + 0x072Eu), (uint16_t)(si));
-    W16(eng, (uint16_t)(bp + 0x0770u), (uint16_t)(di));
-    { uint16_t _off = (uint16_t)(bp + 0x062Cu);
+    W16(eng, (uint16_t)(bp + 0x8E04u), (uint16_t)(si));
+    W16(eng, (uint16_t)(bp + 0x9004u), (uint16_t)(di));
+    { uint16_t _off = (uint16_t)(bp + 0x8602u);
     {
       uint8_t _a = eng[_off]; uint8_t _b = 0x02u;
       uint8_t _r = (uint8_t)(_a | _b);
@@ -8894,7 +8894,7 @@ L_5A48:
     }
 L_5A87:
     {
-      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x06EAu));
+      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x8C02u));
       uint32_t _res = (uint32_t)_a + (uint32_t)_b;
       uint16_t _r = (uint16_t)_res;
       fl_cf = (_res > 0xFFFFu);
@@ -8947,17 +8947,17 @@ L_5AAD:
 L_5AB1:
     bx = (uint16_t)((bx & 0xFF00u) | (uint8_t)(0x81u));
 L_5AB3:
-    eng[(uint16_t)(bp + 0x062Eu)] = (uint8_t)((uint8_t)(bx));
-    cx = R16(eng, (uint16_t)(bp + 0x06EAu));
-    W16(eng, (uint16_t)(bp + 0x06EEu), (uint16_t)(cx));
-    W16(eng, (uint16_t)(bp + 0x06AEu), (uint16_t)(0x0000u));
-    W16(eng, (uint16_t)(bp + 0x066Cu), (uint16_t)(ax));
-    W16(eng, (uint16_t)(bp + 0x0460u), (uint16_t)(si));
-    W16(eng, (uint16_t)(bp + 0x04A6u), (uint16_t)(di));
+    eng[(uint16_t)(bp + 0x8604u)] = (uint8_t)((uint8_t)(bx));
+    cx = R16(eng, (uint16_t)(bp + 0x8C02u));
+    W16(eng, (uint16_t)(bp + 0x8C06u), (uint16_t)(cx));
+    W16(eng, (uint16_t)(bp + 0x8A02u), (uint16_t)(0x0000u));
+    W16(eng, (uint16_t)(bp + 0x8802u), (uint16_t)(ax));
+    W16(eng, (uint16_t)(bp + 0x7806u), (uint16_t)(si));
+    W16(eng, (uint16_t)(bp + 0x7A06u), (uint16_t)(di));
     bp = (uint16_t)(bp + 1u);
     bp = (uint16_t)(bp + 1u);
     {
-      uint16_t _a = bp; uint16_t _b = R16(eng, (uint16_t)(bp + 0x08EEu));
+      uint16_t _a = bp; uint16_t _b = R16(eng, (uint16_t)(bp + 0x9C00u));
       fl_cf = (_a < _b);
     }
     if (!fl_cf) goto L_5AE7;
@@ -8968,7 +8968,7 @@ L_5AB3:
     }
     if (!fl_zf) goto L_5AE7;
     {
-      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x06EAu));
+      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x8C02u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_zf = (_r == 0);
@@ -8991,7 +8991,7 @@ L_5AE7:
     }
     if (!fl_zf) goto L_5B13;
 L_5AFA:
-    di = R16(eng, (uint16_t)(bp + 0x08AEu));
+    di = R16(eng, (uint16_t)(bp + 0x9A00u));
     { uint16_t _r = (uint16_t)(di & di);
       fl_cf = 0;
       fl_of = 0;
@@ -9011,7 +9011,7 @@ L_5B11:
     if (!fl_cf) goto L_5B07;
 L_5B13:
     {
-      uint16_t _off = (uint16_t)(bp + 0x062Cu);
+      uint16_t _off = (uint16_t)(bp + 0x8602u);
       uint8_t _v = eng[_off];
       uint8_t _r = (uint8_t)(_v & 0x80u);
       fl_cf = 0;
@@ -9020,7 +9020,7 @@ L_5B13:
       fl_sf = (_r >> 7) & 1u;
     }
     if (fl_zf) goto L_5B1F;
-    { uint16_t _off = (uint16_t)(bp + 0x08EEu);
+    { uint16_t _off = (uint16_t)(bp + 0x9C00u);
     {
       uint16_t _a = R16(eng, _off); uint16_t _b = 0x0002u;
       uint32_t _res = (uint32_t)_a + (uint32_t)_b;
@@ -9033,8 +9033,8 @@ L_5B13:
     }
     }
 L_5B1F:
-    si = R16(eng, (uint16_t)(bp + 0x07B0u));
-    di = R16(eng, (uint16_t)(bp + 0x07F0u));
+    si = R16(eng, (uint16_t)(bp + 0x9200u));
+    di = R16(eng, (uint16_t)(bp + 0x9400u));
     PUSH16_ENG(0x5B2Au); goto L_4822;
 L_5B2A:
     if (fl_cf) goto L_5B2F;
@@ -9047,8 +9047,8 @@ L_5B35:
     if (fl_cf) goto L_5B3A;
     PUSH16_ENG(0x5B3Au); goto L_5855;
 L_5B3A:
-    si = R16(eng, (uint16_t)(bp + 0x072Au));
-    di = R16(eng, (uint16_t)(bp + 0x076Cu));
+    si = R16(eng, (uint16_t)(bp + 0x8E00u));
+    di = R16(eng, (uint16_t)(bp + 0x9000u));
     PUSH16_ENG(0x5B45u); goto L_4822;
 L_5B45:
     if (fl_cf) goto L_5B4A;
@@ -9058,11 +9058,11 @@ L_5B4A:
 L_5B4D:
     if (fl_cf) goto L_5B60;
 L_5B4F:
-    W16(eng, (uint16_t)(bp + 0x05ACu), (uint16_t)(ax));
+    W16(eng, (uint16_t)(bp + 0x8200u), (uint16_t)(ax));
     PUSH16_ENG(0x5B56u); goto L_583B;
 L_5B56:
     bx = R16(eng, (uint16_t)(si + 0x0100u));
-    { uint16_t _t = R16(eng, (uint16_t)(bp + 0x05ACu)); PUSH16_ENG(0x5B5Eu); ip = _t; DISPATCH_IP(); }
+    { uint16_t _t = R16(eng, (uint16_t)(bp + 0x8200u)); PUSH16_ENG(0x5B5Eu); ip = _t; DISPATCH_IP(); }
 L_5B5E:
     if (!fl_cf) goto L_5B4F;
 L_5B60:
@@ -9070,11 +9070,11 @@ L_5B60:
 L_5B63:
     if (fl_cf) goto L_5B76;
 L_5B65:
-    W16(eng, (uint16_t)(bp + 0x05ACu), (uint16_t)(ax));
+    W16(eng, (uint16_t)(bp + 0x8200u), (uint16_t)(ax));
     PUSH16_ENG(0x5B6Cu); goto L_583B;
 L_5B6C:
-    bx = R16(eng, (uint16_t)(bp + 0x05ECu));
-    { uint16_t _t = R16(eng, (uint16_t)(bp + 0x05ACu)); PUSH16_ENG(0x5B74u); ip = _t; DISPATCH_IP(); }
+    bx = R16(eng, (uint16_t)(bp + 0x8400u));
+    { uint16_t _t = R16(eng, (uint16_t)(bp + 0x8200u)); PUSH16_ENG(0x5B74u); ip = _t; DISPATCH_IP(); }
 L_5B74:
     if (!fl_cf) goto L_5B65;
 L_5B76:
@@ -9141,28 +9141,28 @@ L_5BBD:
       uint16_t _r = (uint16_t)(_a - _b);
       ax = _r;
     }
-    W16(eng, (uint16_t)(bp + 0x066Cu), (uint16_t)(ax));
+    W16(eng, (uint16_t)(bp + 0x8802u), (uint16_t)(ax));
     si = 0x0142u;
-    W16(eng, (uint16_t)(bp + 0x0460u), (uint16_t)(si));
-    W16(eng, (uint16_t)(bp + 0x04A6u), (uint16_t)(si));
-    W16(eng, (uint16_t)(bp + 0x08B0u), (uint16_t)(si));
-    bx = R16(eng, (uint16_t)(bp + 0x08EEu));
+    W16(eng, (uint16_t)(bp + 0x7806u), (uint16_t)(si));
+    W16(eng, (uint16_t)(bp + 0x7A06u), (uint16_t)(si));
+    W16(eng, (uint16_t)(bp + 0x9A02u), (uint16_t)(si));
+    bx = R16(eng, (uint16_t)(bp + 0x9C00u));
     {
       uint16_t _a = bx; uint16_t _b = 0x0002u;
       uint16_t _r = (uint16_t)(_a - _b);
       bx = _r;
     }
-    W16(eng, (uint16_t)(bp + 0x08F0u), (uint16_t)(bx));
-    W16(eng, (uint16_t)(bp + 0x052Cu), (uint16_t)(0x0000u));
+    W16(eng, (uint16_t)(bp + 0x9C02u), (uint16_t)(bx));
+    W16(eng, (uint16_t)(bp + 0x7E06u), (uint16_t)(0x0000u));
     bp = (uint16_t)(bp + 1u);
     bp = (uint16_t)(bp + 1u);
-    cx = R16(eng, (uint16_t)(bp + 0x06E8u));
-    W16(eng, (uint16_t)(bp + 0x06ECu), (uint16_t)(cx));
+    cx = R16(eng, (uint16_t)(bp + 0x8C00u));
+    W16(eng, (uint16_t)(bp + 0x8C04u), (uint16_t)(cx));
     {
       uint16_t _v = cx;
       cx = (uint16_t)(~_v);
     }
-    W16(eng, (uint16_t)(bp + 0x06EAu), (uint16_t)(cx));
+    W16(eng, (uint16_t)(bp + 0x8C02u), (uint16_t)(cx));
     {
       uint16_t _a = bp; uint16_t _b = bx;
       uint16_t _r = (uint16_t)(_a - _b);
@@ -9170,8 +9170,8 @@ L_5BBD:
       fl_zf = (_r == 0);
     }
     if ((!fl_cf && !fl_zf)) goto L_5C18;
-    W16(eng, (uint16_t)(bp + 0x06ACu), (uint16_t)(0x0080u));
-    eng[(uint16_t)(bp + 0x062Cu)] = (uint8_t)(0x01u);
+    W16(eng, (uint16_t)(bp + 0x8A00u), (uint16_t)(0x0080u));
+    eng[(uint16_t)(bp + 0x8602u)] = (uint8_t)(0x01u);
     PUSH16_ENG(0x5C16u); goto L_5B13;
 L_5C16:
     goto L_5C26;
@@ -9185,8 +9185,8 @@ L_5C18:
       fl_sf = (_r >> 15) & 1u;
       ax = _r;
     }
-    W16(eng, (uint16_t)(bp + 0x06ACu), (uint16_t)(ax));
-    eng[(uint16_t)(bp + 0x062Cu)] = (uint8_t)(0x00u);
+    W16(eng, (uint16_t)(bp + 0x8A00u), (uint16_t)(ax));
+    eng[(uint16_t)(bp + 0x8602u)] = (uint8_t)(0x00u);
     PUSH16_ENG(0x5C26u); goto L_598E;
 L_5C26:
     { uint16_t _off = 0x0410u;
@@ -9198,15 +9198,15 @@ L_5C26:
     }
     si = ax;
     {
-      uint16_t _a = si; uint16_t _b = R16(eng, (uint16_t)(bp + 0x06EAu));
+      uint16_t _a = si; uint16_t _b = R16(eng, (uint16_t)(bp + 0x8C02u));
       uint32_t _res = (uint32_t)_a + (uint32_t)_b;
       uint16_t _r = (uint16_t)_res;
       fl_cf = (_res > 0xFFFFu);
       si = _r;
     }
     if (fl_cf) goto L_5C42;
-    ax = R16(eng, (uint16_t)(bp + 0x06E8u));
-    W16(eng, (uint16_t)(bp + 0x06ECu), (uint16_t)(ax));
+    ax = R16(eng, (uint16_t)(bp + 0x8C00u));
+    W16(eng, (uint16_t)(bp + 0x8C04u), (uint16_t)(ax));
     { uint16_t _r = (uint16_t)(bp & bp);
       fl_cf = 0;
       fl_of = 0;
@@ -9223,13 +9223,13 @@ L_5C42:
       fl_sf = (_r >> 15) & 1u;
     }
     if (fl_zf) goto L_5C4D;
-    W16(eng, (uint16_t)(bp + 0x06ACu), (uint16_t)(ax));
+    W16(eng, (uint16_t)(bp + 0x8A00u), (uint16_t)(ax));
     goto L_59EB;
 L_5C4D:
     ip = POP16_ENG(); DISPATCH_IP();
 L_5C4E:
-    si = R16(eng, (uint16_t)(bp + 0x045Eu));
-    di = R16(eng, (uint16_t)(bp + 0x04A4u));
+    si = R16(eng, (uint16_t)(bp + 0x7804u));
+    di = R16(eng, (uint16_t)(bp + 0x7A04u));
     bx = R16(eng, (uint16_t)(si + 0x6DFAu));
     {
       uint16_t _a = bx; uint16_t _b = R16(eng, (uint16_t)(di + 0x6E96u));
@@ -9252,29 +9252,29 @@ L_5C4E:
     cx = (uint16_t)((cx & 0x00FFu) | ((uint16_t)(uint8_t)((uint8_t)(bx >> 8)) << 8));
     si = cx;
     di = bx;
-    W16(eng, (uint16_t)(bp + 0x0830u), (uint16_t)(si));
-    W16(eng, (uint16_t)(bp + 0x0870u), (uint16_t)(di));
+    W16(eng, (uint16_t)(bp + 0x9600u), (uint16_t)(si));
+    W16(eng, (uint16_t)(bp + 0x9800u), (uint16_t)(di));
     ip = POP16_ENG(); DISPATCH_IP();
 L_5C89:
     ax = si;
     bx = di;
     ax = (uint16_t)((ax & 0x00FFu) | ((uint16_t)(uint8_t)((uint8_t)(bx)) << 8));
-    W16(eng, (uint16_t)(bp + 0x1486u), (uint16_t)(ax));
+    W16(eng, (uint16_t)(bp + 0x9E00u), (uint16_t)(ax));
     ip = R16(eng, (uint16_t)(bp + 0x5C77u)); DISPATCH_IP();
 L_5C97:
     ip = POP16_ENG(); DISPATCH_IP();
 L_5C98:
-    ax = R16(eng, 0x1496u);
+    ax = R16(eng, 0x9E10u);
     W16(eng, 0x150Eu, ax);
     ip = POP16_ENG(); DISPATCH_IP();
 L_5C9F:
-    ax = R16(eng, 0x1494u);
+    ax = R16(eng, 0x9E0Eu);
     W16(eng, 0x150Au, ax);
     ax = R16(eng, 0x150Eu);
     W16(eng, 0x150Cu, ax);
     ip = POP16_ENG(); DISPATCH_IP();
 L_5CAC:
-    ax = R16(eng, 0x1492u);
+    ax = R16(eng, 0x9E0Cu);
     W16(eng, 0x1504u, ax);
     ax = R16(eng, 0x150Au);
     W16(eng, 0x1506u, ax);
@@ -9282,7 +9282,7 @@ L_5CAC:
     W16(eng, 0x1508u, ax);
     ip = POP16_ENG(); DISPATCH_IP();
 L_5CBF:
-    ax = R16(eng, 0x1490u);
+    ax = R16(eng, 0x9E0Au);
     W16(eng, 0x14FCu, ax);
     ax = R16(eng, 0x1504u);
     W16(eng, 0x14FEu, ax);
@@ -9292,7 +9292,7 @@ L_5CBF:
     W16(eng, 0x1502u, ax);
     ip = POP16_ENG(); DISPATCH_IP();
 L_5CD8:
-    ax = R16(eng, 0x148Eu);
+    ax = R16(eng, 0x9E08u);
     W16(eng, 0x14F2u, ax);
     ax = R16(eng, 0x14FCu);
     W16(eng, 0x14F4u, ax);
@@ -9304,7 +9304,7 @@ L_5CD8:
     W16(eng, 0x14FAu, ax);
     ip = POP16_ENG(); DISPATCH_IP();
 L_5CF7:
-    ax = R16(eng, 0x148Cu);
+    ax = R16(eng, 0x9E06u);
     W16(eng, 0x14E6u, ax);
     ax = R16(eng, 0x14F2u);
     W16(eng, 0x14E8u, ax);
@@ -9318,7 +9318,7 @@ L_5CF7:
     W16(eng, 0x14F0u, ax);
     ip = POP16_ENG(); DISPATCH_IP();
 L_5D1C:
-    ax = R16(eng, 0x148Au);
+    ax = R16(eng, 0x9E04u);
     W16(eng, 0x14D8u, ax);
     ax = R16(eng, 0x14E6u);
     W16(eng, 0x14DAu, ax);
@@ -9335,7 +9335,7 @@ L_5D1C:
     ip = POP16_ENG(); DISPATCH_IP();
 L_5D47:
     W16(eng, 0x14C6u, ax);
-    ax = R16(eng, 0x1488u);
+    ax = R16(eng, 0x9E02u);
     W16(eng, 0x14C8u, ax);
     ax = R16(eng, 0x14D8u);
     W16(eng, 0x14CAu, ax);
@@ -9363,9 +9363,9 @@ L_5DB2:
 L_5DBE:
     PUSH16_ENG(0x5DC1u); goto L_3C83;
 L_5DC1:
-    W16(eng, 0x08EEu, (uint16_t)(0x0000u));
-    W16(eng, 0x07B0u, (uint16_t)(0x0132u));
-    W16(eng, 0x07F0u, (uint16_t)(0x0132u));
+    W16(eng, 0x9C00u, (uint16_t)(0x0000u));
+    W16(eng, 0x9200u, (uint16_t)(0x0132u));
+    W16(eng, 0x9400u, (uint16_t)(0x0132u));
     PUSH16_ENG(0x5DD6u); goto L_3B77;
 L_5DD6:
     PUSH16_ENG(0x5DD9u); goto L_4C78;
@@ -9398,7 +9398,7 @@ L_5DF4:
       fl_sf = (_r >> 7) & 1u;
     }
     if (fl_sf) goto L_5E14;
-    { uint16_t _off = 0x08EEu;
+    { uint16_t _off = 0x9C00u;
     {
       uint16_t _a = R16(eng, _off); uint16_t _b = 0x0004u;
       uint32_t _res = (uint32_t)_a + (uint32_t)_b;
@@ -9408,7 +9408,7 @@ L_5DF4:
     }
     ax = R16(eng, 0x0416u);
     {
-      uint16_t _a = ax; uint16_t _b = R16(eng, 0x08EEu);
+      uint16_t _a = ax; uint16_t _b = R16(eng, 0x9C00u);
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -9416,7 +9416,7 @@ L_5DF4:
       fl_sf = (_r >> 15) & 1u;
     }
     if ((fl_cf || fl_zf)) goto L_5E14;
-    ax = R16(eng, 0x06ACu);
+    ax = R16(eng, 0x8A00u);
     {
       uint16_t _a = ax; uint16_t _b = 0xFE00u;
       uint16_t _r = (uint16_t)(_a - _b);
@@ -9430,7 +9430,7 @@ L_5DF4:
 L_5E14:
     ip = POP16_ENG(); DISPATCH_IP();
 L_5E15:
-    W16(eng, 0x06ACu, (uint16_t)(0x8000u));
+    W16(eng, 0x8A00u, (uint16_t)(0x8000u));
     bx = 0x0000u;
 L_5E1E:
     W16(eng, 0x0414u, (uint16_t)(bx));
@@ -9448,7 +9448,7 @@ L_5E28:
 L_5E31:
     ax = POP16_ENG();
     {
-      uint16_t _off = 0x06ACu; uint16_t _v = R16(eng, _off);
+      uint16_t _off = 0x8A00u; uint16_t _v = R16(eng, _off);
       _v = (uint16_t)(_v - 1u);
       W16(eng, _off, _v);
     }
@@ -9470,13 +9470,13 @@ L_5E3D:
     ip = POP16_ENG(); DISPATCH_IP();
 L_5E46:
     {
-      uint16_t _a = si; uint16_t _b = R16(eng, (uint16_t)(bp + 0x0830u));
+      uint16_t _a = si; uint16_t _b = R16(eng, (uint16_t)(bp + 0x9600u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_zf = (_r == 0);
     }
     if (!fl_zf) goto L_5E53;
     {
-      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x0870u));
+      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x9800u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -9487,13 +9487,13 @@ L_5E46:
     ip = POP16_ENG(); DISPATCH_IP();
 L_5E53:
     {
-      uint16_t _a = si; uint16_t _b = R16(eng, (uint16_t)(bp + 0x07B0u));
+      uint16_t _a = si; uint16_t _b = R16(eng, (uint16_t)(bp + 0x9200u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_zf = (_r == 0);
     }
     if (!fl_zf) goto L_5E60;
     {
-      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x07F0u));
+      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x9400u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -9504,7 +9504,7 @@ L_5E53:
     ip = POP16_ENG(); DISPATCH_IP();
 L_5E60:
     {
-      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x04A4u));
+      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x7A04u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -9517,7 +9517,7 @@ L_5E67:
     PUSH16_ENG(0x5E6Au); goto L_4A94;
 L_5E6A:
     {
-      uint16_t _a = bp; uint16_t _b = R16(eng, 0x08EEu);
+      uint16_t _a = bp; uint16_t _b = R16(eng, 0x9C00u);
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_of = (((_a ^ _b) & (_a ^ _r) & 0x8000u) != 0);
@@ -9605,10 +9605,10 @@ L_5EB4:
     ax = R16(eng, 0x0408u);
     { uint16_t _off = 0x040Au; uint16_t _a = R16(eng, _off); uint16_t _b = ax; ax = _a; W16(eng, _off, _b); }
     W16(eng, 0x0408u, ax);
-    si = R16(eng, (uint16_t)(bp + 0x0460u));
-    di = R16(eng, (uint16_t)(bp + 0x04A6u));
-    bx = (uint16_t)((bx & 0xFF00u) | (uint8_t)(eng[(uint16_t)(bp + 0x062Eu)]));
-    ax = R16(eng, (uint16_t)(bp + 0x06AEu));
+    si = R16(eng, (uint16_t)(bp + 0x7806u));
+    di = R16(eng, (uint16_t)(bp + 0x7A06u));
+    bx = (uint16_t)((bx & 0xFF00u) | (uint8_t)(eng[(uint16_t)(bp + 0x8604u)]));
+    ax = R16(eng, (uint16_t)(bp + 0x8A02u));
     {
       uint16_t _v = ax;
       uint16_t _r = (uint16_t)(0u - _v);
@@ -9634,10 +9634,10 @@ L_5EE4:
       fl_zf = (_r == 0);
     }
     if (fl_zf) goto L_5F0C;
-    bx = R16(eng, (uint16_t)(bp + 0x0772u));
-    W16(eng, (uint16_t)(bp + 0x07F2u), (uint16_t)(bx));
-    cx = R16(eng, (uint16_t)(bp + 0x0730u));
-    W16(eng, (uint16_t)(bp + 0x07B2u), (uint16_t)(cx));
+    bx = R16(eng, (uint16_t)(bp + 0x9006u));
+    W16(eng, (uint16_t)(bp + 0x9402u), (uint16_t)(bx));
+    cx = R16(eng, (uint16_t)(bp + 0x8E06u));
+    W16(eng, (uint16_t)(bp + 0x9202u), (uint16_t)(cx));
     cx = (uint16_t)((cx & 0x00FFu) | ((uint16_t)(uint8_t)((uint8_t)(bx)) << 8));
     bx = R16(eng, (uint16_t)(si + 0x6DFAu));
     {
@@ -9668,13 +9668,13 @@ L_5F0F:
     }
     if (!fl_zf) goto L_5F43;
     {
-      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x06ACu));
+      uint16_t _a = ax; uint16_t _b = R16(eng, (uint16_t)(bp + 0x8A00u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_cf = (_a < _b);
       fl_zf = (_r == 0);
     }
     if ((fl_cf || fl_zf)) goto L_5F48;
-    W16(eng, (uint16_t)(bp + 0x06ACu), (uint16_t)(ax));
+    W16(eng, (uint16_t)(bp + 0x8A00u), (uint16_t)(ax));
     {
       uint16_t _a = bp; uint16_t _b = 0x0012u;
       uint16_t _r = (uint16_t)(_a - _b);
@@ -9690,14 +9690,14 @@ L_5F29:
     ax = POP16_ENG();
 L_5F2A:
     {
-      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x045Eu));
+      uint16_t _a = di; uint16_t _b = R16(eng, (uint16_t)(bp + 0x7804u));
       uint16_t _r = (uint16_t)(_a - _b);
       fl_zf = (_r == 0);
     }
     if (!fl_zf) goto L_5F3D;
-    W16(eng, (uint16_t)(bp + 0x072Eu), (uint16_t)(si));
-    W16(eng, (uint16_t)(bp + 0x0770u), (uint16_t)(di));
-    { uint16_t _off = (uint16_t)(bp + 0x062Cu);
+    W16(eng, (uint16_t)(bp + 0x8E04u), (uint16_t)(si));
+    W16(eng, (uint16_t)(bp + 0x9004u), (uint16_t)(di));
+    { uint16_t _off = (uint16_t)(bp + 0x8602u);
     {
       uint8_t _a = eng[_off]; uint8_t _b = 0x02u;
       uint8_t _r = (uint8_t)(_a | _b);
@@ -9765,11 +9765,11 @@ L_5F64:
 L_5F68:
     bx = (uint16_t)((bx & 0xFF00u) | (uint8_t)(0x81u));
 L_5F6A:
-    eng[(uint16_t)(bp + 0x062Eu)] = (uint8_t)((uint8_t)(bx));
-    W16(eng, (uint16_t)(bp + 0x06AEu), (uint16_t)(0x0000u));
-    W16(eng, (uint16_t)(bp + 0x1488u), (uint16_t)(0x0000u));
-    W16(eng, (uint16_t)(bp + 0x0460u), (uint16_t)(si));
-    W16(eng, (uint16_t)(bp + 0x04A6u), (uint16_t)(di));
+    eng[(uint16_t)(bp + 0x8604u)] = (uint8_t)((uint8_t)(bx));
+    W16(eng, (uint16_t)(bp + 0x8A02u), (uint16_t)(0x0000u));
+    W16(eng, (uint16_t)(bp + 0x9E02u), (uint16_t)(0x0000u));
+    W16(eng, (uint16_t)(bp + 0x7806u), (uint16_t)(si));
+    W16(eng, (uint16_t)(bp + 0x7A06u), (uint16_t)(di));
     bp = (uint16_t)(bp + 1u);
     bp = (uint16_t)(bp + 1u);
     fl_of = (bp == 0x8000u);
@@ -9790,8 +9790,8 @@ L_5F98:
 L_5F9F:
     if (!fl_cf) goto L_5F95;
 L_5FA1:
-    si = R16(eng, (uint16_t)(bp + 0x07B0u));
-    di = R16(eng, (uint16_t)(bp + 0x07F0u));
+    si = R16(eng, (uint16_t)(bp + 0x9200u));
+    di = R16(eng, (uint16_t)(bp + 0x9400u));
     PUSH16_ENG(0x5FACu); goto L_4822;
 L_5FAC:
     if (fl_cf) goto L_5FB1;
@@ -9808,11 +9808,11 @@ L_5FBC:
 L_5FBF:
     if (fl_cf) goto L_5FD2;
 L_5FC1:
-    W16(eng, (uint16_t)(bp + 0x05ACu), (uint16_t)(ax));
+    W16(eng, (uint16_t)(bp + 0x8200u), (uint16_t)(ax));
     PUSH16_ENG(0x5FC8u); goto L_5E46;
 L_5FC8:
     bx = R16(eng, (uint16_t)(si + 0x0100u));
-    { uint16_t _t = R16(eng, (uint16_t)(bp + 0x05ACu)); PUSH16_ENG(0x5FD0u); ip = _t; DISPATCH_IP(); }
+    { uint16_t _t = R16(eng, (uint16_t)(bp + 0x8200u)); PUSH16_ENG(0x5FD0u); ip = _t; DISPATCH_IP(); }
 L_5FD0:
     if (!fl_cf) goto L_5FC1;
 L_5FD2:
@@ -9820,11 +9820,11 @@ L_5FD2:
 L_5FD5:
     if (fl_cf) goto L_5FE8;
 L_5FD7:
-    W16(eng, (uint16_t)(bp + 0x05ACu), (uint16_t)(ax));
+    W16(eng, (uint16_t)(bp + 0x8200u), (uint16_t)(ax));
     PUSH16_ENG(0x5FDEu); goto L_5E46;
 L_5FDE:
-    bx = R16(eng, (uint16_t)(bp + 0x05ECu));
-    { uint16_t _t = R16(eng, (uint16_t)(bp + 0x05ACu)); PUSH16_ENG(0x5FE6u); ip = _t; DISPATCH_IP(); }
+    bx = R16(eng, (uint16_t)(bp + 0x8400u));
+    { uint16_t _t = R16(eng, (uint16_t)(bp + 0x8200u)); PUSH16_ENG(0x5FE6u); ip = _t; DISPATCH_IP(); }
 L_5FE6:
     if (!fl_cf) goto L_5FD7;
 L_5FE8:
@@ -9968,8 +9968,8 @@ L_6050:
     if (!fl_zf) goto L_609B;
     PUSH16(0x6055u); goto L_60BE;
 L_6055:
-    cx = (uint16_t)((cx & 0x00FFu) | ((uint16_t)(uint8_t)(ss_base[(uint16_t)(bp + 0x04E6u)]) << 8));
-    cx = (uint16_t)((cx & 0xFF00u) | (uint8_t)(ss_base[(uint16_t)(bp + 0x052Cu)]));
+    cx = (uint16_t)((cx & 0x00FFu) | ((uint16_t)(uint8_t)(ss_base[(uint16_t)(bp + 0x7C00u)]) << 8));
+    cx = (uint16_t)((cx & 0xFF00u) | (uint8_t)(ss_base[(uint16_t)(bp + 0x7E06u)]));
     bx = R16(ds_base, 0x0A32u);
     W16(ds_base, (uint16_t)(bx + 0x0AC4u), (uint16_t)(si));
     W16(ds_base, (uint16_t)(bx + 0x0CC4u), (uint16_t)(di));
@@ -10062,17 +10062,17 @@ L_60BE:
       W16(ds_base, _off, _r);
     }
     }
-    ax = R16(ds_base, 0x045Eu);
-    W16(ds_base, 0x045Cu, ax);
-    ax = R16(ds_base, 0x04A4u);
-    W16(ds_base, 0x04A2u, ax);
-    ax = R16(ds_base, 0x052Au);
-    W16(ds_base, 0x0528u, ax);
-    W16(ds_base, 0x045Eu, (uint16_t)(si));
-    W16(ds_base, 0x04A4u, (uint16_t)(di));
-    cx = R16(ds_base, 0x052Cu);
-    W16(ds_base, 0x052Au, (uint16_t)(cx));
-    ax = R16(ss_base, (uint16_t)(bp + 0x04E6u));
+    ax = R16(ds_base, 0x7804u);
+    W16(ds_base, 0x7802u, ax);
+    ax = R16(ds_base, 0x7A04u);
+    W16(ds_base, 0x7A02u, ax);
+    ax = R16(ds_base, 0x7E04u);
+    W16(ds_base, 0x7E02u, ax);
+    W16(ds_base, 0x7804u, (uint16_t)(si));
+    W16(ds_base, 0x7A04u, (uint16_t)(di));
+    cx = R16(ds_base, 0x7E06u);
+    W16(ds_base, 0x7E04u, (uint16_t)(cx));
+    ax = R16(ss_base, (uint16_t)(bp + 0x7C00u));
     { uint8_t _r = (uint8_t)((uint8_t)ax & 0x0Eu);
       fl_cf = 0;
       fl_of = 0;
@@ -10456,7 +10456,7 @@ L_625B:
     W16(ds_base, (uint16_t)(bx + 0x0AC8u), (uint16_t)(si));
     W16(ds_base, (uint16_t)(bx + 0x0CC8u), (uint16_t)(di));
     {
-      uint16_t _off = 0x052Eu;
+      uint16_t _off = 0x7E08u;
       uint16_t _v = R16(ds_base, _off);
       uint16_t _r = (uint16_t)(_v & 0xFFFFu);
       fl_of = 0;
@@ -10468,7 +10468,7 @@ L_625B:
     bx = (uint16_t)(bx + 1u);
 L_6276:
     {
-      uint16_t _off = 0x052Cu;
+      uint16_t _off = 0x7E06u;
       uint16_t _v = R16(ds_base, _off);
       uint16_t _r = (uint16_t)(_v & 0xFFFFu);
       fl_of = 0;
