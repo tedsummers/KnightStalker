@@ -14,8 +14,8 @@ You can play against **KnightStalkerUCI** live on Lichess via the [**KnightStalk
 
 - **~30×–38× faster emulated clock speed (~4+ GIPS equivalent)**: `tools/lift_fritz.py` statically translates all 3,904 reachable 16-bit 8086 instructions of `FRITZ.BIN` ahead-of-time into native C (`fritz_recompiled.h`) with backward flag-liveness elimination, flat-segment fast paths, and computed-goto dispatch (with the original 8086 interpreter retained as a safety fallback).
 - **Zero-syscall asynchronous I/O**: Dedicated background `stdin` reader threads on both Linux (`pthread`) and Windows eliminate per-poll `select()` syscalls from the search hot loop.
-- **100% faithful 1991 engine by default (`Hash=0`, `Threads=1`)**: Produces bit-for-bit identical moves, depths, scores, and principal variations to the original 1991 MS-DOS `FRITZ.BIN` at any fixed depth — just ~30× faster, translating to **+2 to +4 extra plies** on the clock.
-- **Optional Transposition Table (`Hash`) & Lazy SMP (`Threads`)**: Enable a lockless 64-bit XOR-keyed Zobrist transposition table (`Hash` up to `512` MB) and multi-threaded Lazy SMP search (`Threads` up to `32`) for even deeper searches (up to **+4 to +10 plies** over v1.1 in middlegames and endgames).
+- **Transposition Table (`Hash`) & Lazy SMP (`Threads`) enabled by default (`Hash=64`, `Threads=4`)**: Uses a lockless 64-bit XOR-keyed Zobrist transposition table (up to `512` MB) and multi-threaded Lazy SMP search (up to `32` threads) right out of the box for **+3 to +10 extra plies** over v1.1 in middlegames and endgames.
+- **Strict 1991 faithful mode anytime (`Hash=0`, `Threads=1`)**: Setting `Hash=0` and `Threads=1` disables the TT and SMP to produce bit-for-bit identical moves, depths, scores, and principal variations to the original 1991 MS-DOS `FRITZ.BIN` at ~30×–38× faster clock speed (**+2 to +4 extra plies** on the clock).
 
 ### Performance Comparison (v1.1 vs v2.0, `movetime 2000`)
 
@@ -31,7 +31,7 @@ Measured on an Intel Core Ultra 7 265 (`OwnBook=false`):
 ## Overview
 
 - **Zero runtime dependencies**: Both `FRITZ.BIN` (`28,828` bytes) and `FRITZ.FBK` (`16,132` bytes) are embedded directly into the executable via `fritz_data.h` and statically lifted into `fritz_recompiled.h`. No external files, DOSBox, or GUI files are required at runtime.
-- **Faithful 1991 engine behavior**: With default settings (`Hash=0`, `Threads=1`), `KnightStalkerUCI` executes the exact unmodified 1991 `FRITZ.BIN` logic with identical best moves, search depths, centipawn/mate scores, and principal variations to the original MS-DOS binary running in DOSBox.
+- **Faithful 1991 engine core**: Built directly on the unmodified 1991 `FRITZ.BIN` evaluation and search logic. By default (`Hash=64`, `Threads=4`), v2.0 adds a lockless transposition table and Lazy SMP threading on top; set `Hash=0` and `Threads=1` for 100% bit-for-bit identical move selection to the original MS-DOS binary running in DOSBox.
 
 ## Supported UCI Commands
 
@@ -40,8 +40,8 @@ Measured on an Intel Core Ultra 7 265 (`OwnBook=false`):
 - `ucinewgame`
 - `setoption name OwnBook value <true|false>` (default `true`)
 - `setoption name Ponder value <true|false>` (default `false`)
-- `setoption name Hash value <0..512>` (default `0` MB = pure 1991 faithful mode; `>0` enables lockless Zobrist transposition table)
-- `setoption name Threads value <1..32>` (default `1`; `>1` enables multi-threaded Lazy SMP search, auto-allocating 16 MB TT if `Hash` is `0`)
+- `setoption name Hash value <0..512>` (default `64` MB; set `0` to disable TT for strict 1991 mode)
+- `setoption name Threads value <1..32>` (default `4`; set `1` for single-threaded mode; `>1` auto-allocates 16 MB TT if `Hash` is `0`)
 - `setoption name Clear Hash`
 - `position [startpos | fen <fen>] [moves <m1> <m2> ...]`
 - `go [ponder] [depth <n> | movetime <ms> | wtime <ms> btime <ms> winc <ms> binc <ms> movestogo <n> | infinite]`

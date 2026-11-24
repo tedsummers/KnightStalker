@@ -87,8 +87,8 @@ static uint32_t bios_tick_base = 0;
 
 static int      opt_own_book = 1;
 static int      opt_ponder = 0;
-static int      opt_hash_mb = 0;
-static int      opt_threads = 1;
+static int      opt_hash_mb = 64;
+static int      opt_threads = 4;
 static int      pos_is_startpos = 1;
 
 /* Lockless Transposition Table & Lazy SMP State */
@@ -3292,6 +3292,7 @@ int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     init_parity_lut();
     init_zobrist();
+    tt_resize(opt_hash_mb);
 
     prog_start_ms = now_ms();
     bios_tick_base = (uint32_t)(((uint64_t)time(NULL) % 86400ULL) * 18ULL);
@@ -3332,8 +3333,8 @@ int main(void) {
             printf("id author Frans Morsch\n");
             printf("option name OwnBook type check default true\n");
             printf("option name Ponder type check default false\n");
-            printf("option name Hash type spin default 0 min 0 max 512\n");
-            printf("option name Threads type spin default 1 min 1 max 32\n");
+            printf("option name Hash type spin default 64 min 0 max 512\n");
+            printf("option name Threads type spin default 4 min 1 max 32\n");
             printf("option name Clear Hash type button\n");
             printf("uciok\n");
             fflush(stdout);
