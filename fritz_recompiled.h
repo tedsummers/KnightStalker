@@ -114,7 +114,7 @@ static void exec_fritz_recompiled_ctx(FritzCtx *ctx) {
     uint8_t fl_cf = 0, fl_zf = 0, fl_sf = 0, fl_of = 0;
     uint64_t nodes = 0;
     TTFrame tt_stack[136];
-    if (__builtin_expect(ctx->tt_mask != 0, 0)) memset(tt_stack, 0, sizeof(tt_stack));
+    if (__builtin_expect(ctx->tt_mask != 0 || ctx->modern_search, 0)) memset(tt_stack, 0, sizeof(tt_stack));
     (void)cs_base;
 
 #define R16(b, o) recomp_r16((b), (uint16_t)(o))
@@ -8752,7 +8752,7 @@ L_59CF:
 L_59E8:
     PUSH16_ENG(0x59EBu); goto L_3A29;
 L_59EB:
-    if (__builtin_expect(ctx->tt_mask != 0, 0)) {
+    if (__builtin_expect(ctx->tt_mask != 0 || ctx->modern_search, 0)) {
         tt_store_hook(ctx, eng, bp, tt_stack);
     }
     bp = (uint16_t)(bp - 1u);
@@ -8823,8 +8823,31 @@ L_5A41:
     }
     if (fl_zf) goto L_5AA0;
 L_5A45:
+    if (__builtin_expect(ctx->modern_search && bp >= 2u, 0)) {
+        uint16_t _ply = bp >> 1;
+        if (_ply < 136u && tt_stack[_ply].re_search_state != 0u) {
+            uint8_t _st = tt_stack[_ply].re_search_state;
+            tt_stack[_ply].re_search_state = 0u;
+            W16(eng, (uint16_t)(bp + 0x9C02u), tt_stack[_ply].saved_target_bp);
+            if (!(eng[0x009Cu] & 0x80u) && ax > R16(eng, (uint16_t)(bp + 0x8C04u))) {
+                uint32_t _pa = R16(eng, (uint16_t)(bp + 0x8C04u));
+                uint32_t _pb = 0x10000u - (uint32_t)R16(eng, (uint16_t)(bp + 0x8C02u));
+                if (_st == 2u || (_st == 1u && _pb > _pa + 1u)) {
+                    ax = tt_stack[_ply].saved_ax;
+                    bx = (uint16_t)((bx & 0xFF00u) | tt_stack[_ply].saved_bx);
+                    eng[0x041Bu] = 0x00u;
+                    tt_stack[_ply].re_search_state = 3u;
+                    goto L_5AB3;
+                }
+            }
+        }
+    }
     PUSH16_ENG(0x5A48u); goto L_4BDE;
 L_5A48:
+    if (__builtin_expect(ctx->modern_search && bp >= 2u, 0)) {
+        uint16_t _ply = bp >> 1;
+        if (_ply < 136u && tt_stack[_ply].moves_searched < 255u) tt_stack[_ply].moves_searched++;
+    }
     {
       uint16_t _off = 0x009Cu;
       uint8_t _v = eng[_off];
@@ -8947,15 +8970,34 @@ L_5AAD:
 L_5AB1:
     bx = (uint16_t)((bx & 0xFF00u) | (uint8_t)(0x81u));
 L_5AB3:
+    if (__builtin_expect(ctx->modern_search && bp >= 2u, 0)) {
+        if (child_select_hook(eng, bp, ax, (uint8_t)bx, tt_stack)) { ax = 0x0001u; goto L_5A45; }
+    }
     eng[(uint16_t)(bp + 0x8604u)] = (uint8_t)((uint8_t)(bx));
     cx = R16(eng, (uint16_t)(bp + 0x8C02u));
     W16(eng, (uint16_t)(bp + 0x8C06u), (uint16_t)(cx));
+    if (__builtin_expect(ctx->modern_search && bp >= 2u, 0)) {
+        uint16_t _ply = bp >> 1;
+        if (_ply < 136u && (tt_stack[_ply].re_search_state == 1u || tt_stack[_ply].re_search_state == 2u)) {
+            W16(eng, (uint16_t)(bp + 0x8C06u), (uint16_t)(~R16(eng, (uint16_t)(bp + 0x8C04u))));
+        }
+    }
     W16(eng, (uint16_t)(bp + 0x8A02u), (uint16_t)(0x0000u));
     W16(eng, (uint16_t)(bp + 0x8802u), (uint16_t)(ax));
     W16(eng, (uint16_t)(bp + 0x7806u), (uint16_t)(si));
     W16(eng, (uint16_t)(bp + 0x7A06u), (uint16_t)(di));
     bp = (uint16_t)(bp + 1u);
     bp = (uint16_t)(bp + 1u);
+    if (__builtin_expect(ctx->tt_mask != 0 || ctx->modern_search, 0)) {
+        int _rc = node_enter_hook(ctx, eng, bp, (uint8_t)(dx >> 8), ax, (uint8_t)bx, tt_stack);
+        if (_rc == 1) {
+            dx = (uint16_t)((dx >> 8) | (dx << 8));
+            uint16_t _k0 = R16(eng, 0x0408u), _k1 = R16(eng, 0x040Au);
+            W16(eng, 0x0408u, _k1); W16(eng, 0x040Au, _k0);
+            goto L_59EB;
+        }
+        if (_rc == 2) goto L_5AE7;
+    }
     {
       uint16_t _a = bp; uint16_t _b = R16(eng, (uint16_t)(bp + 0x9C00u));
       fl_cf = (_a < _b);
@@ -8980,9 +9022,6 @@ L_5AE7:
     ax = R16(eng, 0x0408u);
     { uint16_t _off = 0x040Au; uint16_t _a = R16(eng, _off); uint16_t _b = ax; ax = _a; W16(eng, _off, _b); }
     W16(eng, 0x0408u, ax);
-    if (__builtin_expect(ctx->tt_mask != 0, 0)) {
-        if (tt_probe_hook(ctx, eng, bp, (uint8_t)dx, tt_stack)) goto L_59EB;
-    }
     {
       uint16_t _off = 0x041Bu;
       uint8_t _v = eng[_off];
@@ -9066,6 +9105,9 @@ L_5B56:
 L_5B5E:
     if (!fl_cf) goto L_5B4F;
 L_5B60:
+    if (__builtin_expect(ctx->modern_search && bp >= 2u, 0)) {
+        uint16_t _ply = bp >> 1; if (_ply < 136u) tt_stack[_ply].in_quiet_loop = 1u;
+    }
     PUSH16_ENG(0x5B63u); goto L_4068;
 L_5B63:
     if (fl_cf) goto L_5B76;
@@ -9078,6 +9120,9 @@ L_5B6C:
 L_5B74:
     if (!fl_cf) goto L_5B65;
 L_5B76:
+    if (__builtin_expect(ctx->modern_search && bp >= 2u, 0)) {
+        uint16_t _ply = bp >> 1; if (_ply < 136u) tt_stack[_ply].in_quiet_loop = 0u;
+    }
     {
       uint16_t _off = 0x009Cu;
       uint8_t _v = eng[_off];
@@ -9152,6 +9197,11 @@ L_5BBD:
       uint16_t _r = (uint16_t)(_a - _b);
       bx = _r;
     }
+    if (__builtin_expect(ctx->modern_search, 0)) {
+        uint16_t _rem_p = (bx >= bp) ? (uint16_t)(((bx - bp) >> 1) + 2u) : 1u;
+        uint16_t _extra = (_rem_p >= 7u) ? 4u : ((_rem_p >= 3u) ? 2u : 0u);
+        bx = (bx > _extra) ? (uint16_t)(bx - _extra) : 0u;
+    }
     W16(eng, (uint16_t)(bp + 0x9C02u), (uint16_t)(bx));
     W16(eng, (uint16_t)(bp + 0x7E06u), (uint16_t)(0x0000u));
     bp = (uint16_t)(bp + 1u);
@@ -9172,6 +9222,11 @@ L_5BBD:
     if ((!fl_cf && !fl_zf)) goto L_5C18;
     W16(eng, (uint16_t)(bp + 0x8A00u), (uint16_t)(0x0080u));
     eng[(uint16_t)(bp + 0x8602u)] = (uint8_t)(0x01u);
+    if (__builtin_expect(ctx->tt_mask != 0, 0)) {
+        if (tt_probe_null_child(ctx, eng, bp, (uint8_t)dx, tt_stack)) {
+            PUSH16_ENG(0x5C16u); goto L_59EB;
+        }
+    }
     PUSH16_ENG(0x5C16u); goto L_5B13;
 L_5C16:
     goto L_5C26;
@@ -9207,6 +9262,10 @@ L_5C26:
     if (fl_cf) goto L_5C42;
     ax = R16(eng, (uint16_t)(bp + 0x8C00u));
     W16(eng, (uint16_t)(bp + 0x8C04u), (uint16_t)(ax));
+    if (__builtin_expect((ctx->tt_mask != 0 || ctx->modern_search) && bp >= 2u, 0)) {
+        uint16_t _ply = bp >> 1;
+        if (_ply < 136u) W16(eng, (uint16_t)(bp + 0x8C04u), (uint16_t)tt_stack[_ply].orig_alpha);
+    }
     { uint16_t _r = (uint16_t)(bp & bp);
       fl_cf = 0;
       fl_of = 0;

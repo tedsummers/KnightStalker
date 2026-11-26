@@ -11,6 +11,7 @@
 #endif
 
 #include <ctype.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -89,10 +90,12 @@ static int      opt_own_book = 1;
 static int      opt_ponder = 0;
 static int      opt_hash_mb = 64;
 static int      opt_threads = 4;
+static int      opt_modern_search = 1;
 static int      pos_is_startpos = 1;
 
-/* Lockless Transposition Table & Lazy SMP State */
+/* Lockless 4-Way Bucketed Transposition Table & Lazy SMP State */
 #define MAX_SMP_THREADS 32
+#define TT_BUCKET_WAYS  4u
 
 typedef struct {
     uint64_t key_xor_data;
@@ -100,29 +103,41 @@ typedef struct {
 } TTEntry;
 
 typedef struct {
+    TTEntry slots[TT_BUCKET_WAYS];
+} TTBucket;
+
+typedef struct {
     uint64_t key;
     uint32_t orig_alpha;
     uint32_t beta;
     uint16_t best_from;
     uint16_t best_to;
+    uint16_t saved_target_bp;
+    uint16_t saved_ax;
     uint8_t  rem;
     uint8_t  active;
+    uint8_t  moves_searched;
+    uint8_t  in_quiet_loop;
+    uint8_t  re_search_state; /* 0=normal, 1=PVS zw, 2=LMR+zw, 3=re-searching full */
+    uint8_t  saved_bx;
 } TTFrame;
 
 typedef struct {
-    uint8_t *ram;
-    TTEntry *tt;
-    uint64_t tt_mask;
-    uint64_t nodes;
-    int      tid;
-    int      is_main;
-    uint8_t  tt_gen;
+    uint8_t  *ram;
+    TTBucket *tt;
+    uint64_t  tt_mask;
+    uint64_t  nodes;
+    int       tid;
+    int       is_main;
+    uint8_t   tt_gen;
+    uint8_t   modern_search;
 } FritzCtx;
 
-static TTEntry *g_tt = NULL;
-static uint64_t g_tt_mask = 0;
-static int      g_tt_alloc_mb = 0;
-static uint8_t  g_tt_gen = 0;
+static TTBucket *g_tt = NULL;
+static uint64_t  g_tt_mask = 0;
+static int       g_tt_alloc_mb = 0;
+static uint8_t   g_tt_gen = 0;
+static uint8_t   lmr_table[32][64];
 
 static uint64_t zobrist_psq[64][80];
 static uint64_t zobrist_ep[80];
@@ -657,6 +672,19 @@ static void init_zobrist(void) {
     zobrist_stm = splitmix64_next(&st);
 }
 
+static void init_lmr_table(void) {
+    memset(lmr_table, 0, sizeof(lmr_table));
+    for (int d = 1; d < 32; d++) {
+        for (int m = 1; m < 64; m++) {
+            double r = 0.55 + log((double)d) * log((double)m) / 2.35;
+            int ri = (int)r;
+            if (ri < 0) ri = 0;
+            if (ri > 4) ri = 4;
+            lmr_table[d][m] = (uint8_t)ri;
+        }
+    }
+}
+
 static void tt_resize(int mb) {
     if (mb < 0) mb = 0;
     if (mb > 512) mb = 512;
@@ -668,12 +696,12 @@ static void tt_resize(int mb) {
     if (mb == 0) return;
 
     uint64_t bytes = (uint64_t)mb * 1024ULL * 1024ULL;
-    uint64_t entries = bytes / sizeof(TTEntry);
+    uint64_t buckets = bytes / sizeof(TTBucket);
     uint64_t pow2 = 1ULL;
-    while ((pow2 << 1) <= entries) pow2 <<= 1;
-    if (pow2 < 1024ULL) pow2 = 1024ULL;
+    while ((pow2 << 1) <= buckets) pow2 <<= 1;
+    if (pow2 < 256ULL) pow2 = 256ULL;
 
-    g_tt = (TTEntry *)calloc((size_t)pow2, sizeof(TTEntry));
+    g_tt = (TTBucket *)calloc((size_t)pow2, sizeof(TTBucket));
     if (g_tt) {
         g_tt_mask = pow2 - 1ULL;
         g_tt_alloc_mb = mb;
@@ -682,7 +710,7 @@ static void tt_resize(int mb) {
 
 static void tt_clear(void) {
     if (g_tt && g_tt_mask > 0) {
-        memset(g_tt, 0, (size_t)(g_tt_mask + 1ULL) * sizeof(TTEntry));
+        memset(g_tt, 0, (size_t)(g_tt_mask + 1ULL) * sizeof(TTBucket));
     }
     g_tt_gen = 0;
 }
@@ -2540,15 +2568,22 @@ static inline void ctx_w16(uint8_t *base, uint16_t off, uint16_t v) {
 #define PLY_07F0       0x9400u
 #define PLY_08EE       0x9C00u
 
-static inline uint64_t fritz_zobrist_hash(const uint8_t *eng, uint16_t bp, uint8_t stm_dl) {
+static inline uint64_t fritz_zobrist_hash(const uint8_t *eng, uint16_t bp, uint8_t stm_dl, int *has_non_pawn_out) {
     uint64_t h = (stm_dl & 0x20u) ? zobrist_stm : 0ULL;
+    uint8_t stm_color = stm_dl & 0x30u;
+    int non_pawn = 0;
     for (int i = 0; i < 32; i++) {
         uint16_t sq = ctx_r16(eng, (uint16_t)(0x0300u + (uint16_t)(i << 1)));
         if (sq >= 0x0132u && sq <= 0x01CCu) {
             uint8_t pc = eng[sq];
             h ^= zobrist_psq[pc & 0x3Fu][(sq - 0x0132u) >> 1];
+            if ((pc & 0x30u) == stm_color) {
+                uint8_t pt = pc & 0x0Eu;
+                if (pt >= 0x02u && pt <= 0x0Au) non_pawn = 1;
+            }
         }
     }
+    if (has_non_pawn_out) *has_non_pawn_out = non_pawn;
     if (bp >= 2u) {
         uint8_t mv_flg = eng[PLY_052C + bp - 2u];
         if ((mv_flg & 0x41u) == 0x41u) {
@@ -2561,22 +2596,159 @@ static inline uint64_t fritz_zobrist_hash(const uint8_t *eng, uint16_t bp, uint8
     return h;
 }
 
-static int tt_probe_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp, uint8_t stm_dl, TTFrame *tt_stack) {
+static inline int fritz_has_non_pawn(const uint8_t *eng, uint8_t stm_dl) {
+    uint8_t stm_color = stm_dl & 0x30u;
+    for (int i = 0; i < 32; i++) {
+        uint16_t sq = ctx_r16(eng, (uint16_t)(0x0300u + (uint16_t)(i << 1)));
+        if (sq >= 0x0132u && sq <= 0x01CCu) {
+            uint8_t pc = eng[sq];
+            if ((pc & 0x30u) == stm_color) {
+                uint8_t pt = pc & 0x0Eu;
+                if (pt >= 0x02u && pt <= 0x0Au) return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static inline int tt_bucket_probe(const FritzCtx *ctx, uint64_t key, uint64_t *out_data) {
+    const TTBucket *b = &ctx->tt[key & ctx->tt_mask];
+    for (uint32_t i = 0; i < TT_BUCKET_WAYS; i++) {
+        uint64_t d = __atomic_load_n(&b->slots[i].data, __ATOMIC_RELAXED);
+        uint64_t k = __atomic_load_n(&b->slots[i].key_xor_data, __ATOMIC_RELAXED);
+        if (d != 0ULL && (k ^ d) == key) {
+            *out_data = d;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * Called at 0x5AD3 (entry of every full-width interior node, BEFORE null-move).
+ * Returns:
+ *   0 = proceed normally (may try null-move at 0x5AD3..0x5AE4)
+ *   1 = cutoff (TT or RFP); caller swaps dx & king-squares and jumps to L_59EB
+ *   2 = skip null-move; caller jumps directly to L_5AE7
+ */
+static int node_enter_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp,
+                           uint8_t child_stm, uint16_t parent_eval_ax,
+                           uint8_t node_flags_bx, TTFrame *tt_stack) {
     uint16_t ply = bp >> 1;
     if (ply == 0u || ply >= PLY_STACK_CAP) return 0;
-    tt_stack[ply].active = 0;
+
+    TTFrame *f = &tt_stack[ply];
+    f->active = 0;
+    f->moves_searched = 0;
+    f->in_quiet_loop = 0;
+    f->re_search_state = 0;
 
     uint16_t target_bp = ctx_r16(eng, (uint16_t)(PLY_08EE + bp));
-    if (eng[PLY_062C + bp] & 0x80u) target_bp = (uint16_t)(target_bp + 2u);
-    if (bp > target_bp) return 0; /* quiescence */
+    int in_check = ((node_flags_bx & 0x80u) != 0);
+    if (in_check) target_bp = (uint16_t)(target_bp + 2u);
+    if (bp > target_bp) return 0;
 
     uint8_t rem = (uint8_t)(((target_bp - bp) >> 1) + 1u);
-    uint64_t key = fritz_zobrist_hash(eng, bp, stm_dl);
     uint32_t alpha = (uint32_t)ctx_r16(eng, (uint16_t)(PLY_06EC + bp));
     uint32_t neg_beta = (uint32_t)ctx_r16(eng, (uint16_t)(PLY_06EA + bp));
     uint32_t beta = 0x10000u - neg_beta;
+    int is_pv = (beta > alpha + 1u);
+
+    f->orig_alpha = alpha;
+    f->beta = beta;
+    f->best_from = 0;
+    f->best_to = 0;
+    f->rem = rem;
+
+    int has_non_pawn = 1;
+    int tt_no_null = 0;
+
+    if (ctx->tt_mask != 0) {
+        uint64_t key = fritz_zobrist_hash(eng, bp, child_stm, &has_non_pawn);
+        f->key = key;
+        f->active = 1;
+
+        uint64_t d = 0;
+        if (tt_bucket_probe(ctx, key, &d)) {
+            uint16_t tt_score = (uint16_t)(d & 0xFFFFu);
+            uint16_t tt_from  = (uint16_t)((d >> 16) & 0x3FFu);
+            uint16_t tt_to    = (uint16_t)((d >> 26) & 0x3FFu);
+            uint8_t  tt_depth = (uint8_t)((d >> 36) & 0xFFu);
+            uint8_t  tt_bound = (uint8_t)((d >> 44) & 0x3u);
+
+            if (tt_score > 0xFD00u) tt_score = (uint16_t)(tt_score - bp);
+            else if (tt_score < 0x0300u && tt_score > 0u) tt_score = (uint16_t)(tt_score + bp);
+
+            if (tt_from >= 0x0132u && tt_from <= 0x01CCu &&
+                tt_to >= 0x0132u && tt_to <= 0x01CCu) {
+                ctx_w16(eng, (uint16_t)(PLY_07B0 + bp), tt_from);
+                ctx_w16(eng, (uint16_t)(PLY_07F0 + bp), tt_to);
+            }
+
+            if (tt_depth >= rem && tt_score != 0u &&
+                !(is_pv && ply <= 1u) &&
+                !(tt_score == 0x8000u && ply <= 2u)) {
+                if (tt_bound == 1u ||
+                    (tt_bound == 2u && (uint32_t)tt_score >= beta) ||
+                    (tt_bound == 3u && (uint32_t)tt_score <= alpha)) {
+                    ctx_w16(eng, (uint16_t)(PLY_06AC + bp), tt_score);
+                    f->active = 0;
+                    return 1;
+                }
+            }
+
+            if (tt_bound == 3u && (uint32_t)tt_score < beta &&
+                (uint32_t)tt_depth + 3u >= (uint32_t)rem) {
+                tt_no_null = 1;
+            }
+        }
+    } else if (ctx->modern_search) {
+        has_non_pawn = fritz_has_non_pawn(eng, child_stm);
+    }
+
+    if (ctx->modern_search) {
+        uint16_t static_eval = (uint16_t)(0u - parent_eval_ax);
+        /* Reverse Futility Pruning (Static Null-Move Pruning) */
+        if (!is_pv && !in_check && rem >= 1u && rem <= 3u &&
+            beta > 0x0300u && beta < 0xFD00u &&
+            static_eval > 0x0300u && static_eval < 0xFD00u) {
+            uint32_t margin = (uint32_t)rem * 224u;
+            if ((uint32_t)static_eval >= beta + margin) {
+                ctx_w16(eng, (uint16_t)(PLY_06AC + bp), (uint16_t)(static_eval - margin));
+                f->active = 0;
+                return 1;
+            }
+        }
+        /* Skip null-move on PV nodes, pawn-only endgames, nested null-moves, or TT fail-low hint */
+        if (is_pv || tt_no_null || !has_non_pawn || ctx_r16(eng, 0x0410u) != 0u) {
+            return 2;
+        }
+    }
+
+    return 0;
+}
+
+/* TT probe for null-move child node at 0x5C13 (before CALL L_5B13) */
+static int tt_probe_null_child(FritzCtx *ctx, uint8_t *eng, uint16_t bp,
+                               uint8_t stm_dl, TTFrame *tt_stack) {
+    uint16_t ply = bp >> 1;
+    if (ply == 0u || ply >= PLY_STACK_CAP) return 0;
 
     TTFrame *f = &tt_stack[ply];
+    f->active = 0;
+    f->moves_searched = 0;
+    f->in_quiet_loop = 0;
+    f->re_search_state = 0;
+
+    uint16_t target_bp = ctx_r16(eng, (uint16_t)(PLY_08EE + bp));
+    if (bp > target_bp) return 0;
+
+    uint8_t rem = (uint8_t)(((target_bp - bp) >> 1) + 1u);
+    uint32_t alpha = (uint32_t)ctx_r16(eng, (uint16_t)(PLY_06EC + bp));
+    uint32_t neg_beta = (uint32_t)ctx_r16(eng, (uint16_t)(PLY_06EA + bp));
+    uint32_t beta = 0x10000u - neg_beta;
+    uint64_t key = fritz_zobrist_hash(eng, bp, stm_dl, NULL);
+
     f->key = key;
     f->orig_alpha = alpha;
     f->beta = beta;
@@ -2585,10 +2757,8 @@ static int tt_probe_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp, uint8_t stm_d
     f->rem = rem;
     f->active = 1;
 
-    TTEntry *e = &ctx->tt[key & ctx->tt_mask];
-    uint64_t d = __atomic_load_n(&e->data, __ATOMIC_RELAXED);
-    uint64_t k = __atomic_load_n(&e->key_xor_data, __ATOMIC_RELAXED);
-    if ((k ^ d) == key) {
+    uint64_t d = 0;
+    if (tt_bucket_probe(ctx, key, &d)) {
         uint16_t tt_score = (uint16_t)(d & 0xFFFFu);
         uint16_t tt_from  = (uint16_t)((d >> 16) & 0x3FFu);
         uint16_t tt_to    = (uint16_t)((d >> 26) & 0x3FFu);
@@ -2604,9 +2774,7 @@ static int tt_probe_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp, uint8_t stm_d
             ctx_w16(eng, (uint16_t)(PLY_07F0 + bp), tt_to);
         }
 
-        int is_pv = (beta > alpha + 1u);
         if (tt_depth >= rem && tt_score != 0u &&
-            !(is_pv && ply <= 1u) &&
             !(tt_score == 0x8000u && ply <= 2u)) {
             if (tt_bound == 1u ||
                 (tt_bound == 2u && (uint32_t)tt_score >= beta) ||
@@ -2620,10 +2788,87 @@ static int tt_probe_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp, uint8_t stm_d
     return 0;
 }
 
+/*
+ * Called at 0x5AB3 (parent ply bp >= 2, move already made & check-tested in bx).
+ * Handles Futility Pruning (FP), Late Move Pruning (LMP), LMR, and Interior PVS.
+ * Returns 1 if the quiet move should be pruned immediately (caller sets ax=1 and jumps to L_5A45).
+ */
+static int child_select_hook(uint8_t *eng, uint16_t bp, uint16_t parent_eval_ax,
+                             uint8_t child_flags_bx, TTFrame *tt_stack) {
+    uint16_t ply = bp >> 1;
+    if (ply == 0u || ply >= PLY_STACK_CAP) return 0;
+    TTFrame *pf = &tt_stack[ply];
+
+    if (pf->re_search_state == 3u) {
+        pf->re_search_state = 0u;
+        return 0;
+    }
+
+    uint16_t child_tbp = ctx_r16(eng, (uint16_t)(PLY_08EE + bp + 2u));
+    uint16_t child_bp = (uint16_t)(bp + 2u);
+    int child_rem = (child_tbp >= child_bp) ? (int)(((child_tbp - child_bp) >> 1) + 1u) : 0;
+
+    uint32_t p_alpha = (uint32_t)ctx_r16(eng, (uint16_t)(PLY_06EC + bp));
+    uint32_t p_neg_beta = (uint32_t)ctx_r16(eng, (uint16_t)(PLY_06EA + bp));
+    uint32_t p_beta = 0x10000u - p_neg_beta;
+    int p_is_pv = (p_beta > p_alpha + 1u);
+    int gives_chk = ((child_flags_bx & 0x80u) != 0);
+    int p_in_chk = ((eng[PLY_062C + bp] & 0x80u) != 0);
+    uint16_t p_best = ctx_r16(eng, (uint16_t)(PLY_06AC + bp));
+
+    if (pf->in_quiet_loop && !gives_chk && !p_in_chk) {
+        /* Late Move Pruning & Futility Pruning on non-PV frontier/pre-frontier quiet moves */
+        if (!p_is_pv && pf->moves_searched >= 1u &&
+            p_best > 0x0300u && p_alpha > 0x0300u && p_alpha < 0xFD00u) {
+            if ((child_rem == 1 && pf->moves_searched >= 8u) ||
+                (child_rem == 2 && pf->moves_searched >= 16u)) {
+                return 1;
+            }
+            if (child_rem >= 1 && child_rem <= 2 &&
+                parent_eval_ax > 0x0300u && parent_eval_ax < 0xFD00u) {
+                uint32_t margin = (uint32_t)child_rem * 280u + 160u;
+                if ((uint32_t)parent_eval_ax + margin <= p_alpha) {
+                    return 1;
+                }
+            }
+        }
+
+        /* Late Move Reductions (LMR) on late quiet moves */
+        if (pf->moves_searched >= 2u && child_rem >= 2 && p_alpha > 0u) {
+            int d_idx = child_rem < 31 ? child_rem : 31;
+            int m_idx = pf->moves_searched < 63 ? (int)pf->moves_searched : 63;
+            int r = (int)lmr_table[d_idx][m_idx];
+            if (p_is_pv && r > 0) r--;
+            if (r > child_rem - 1) r = child_rem - 1;
+            if (r > 0) {
+                pf->saved_target_bp = child_tbp;
+                pf->saved_ax = parent_eval_ax;
+                pf->saved_bx = (uint8_t)(child_flags_bx & 0x81u);
+                ctx_w16(eng, (uint16_t)(PLY_08EE + bp + 2u), (uint16_t)(child_tbp - (uint16_t)(r * 2)));
+                pf->re_search_state = 2u;
+                return 0;
+            }
+        }
+    }
+
+    /* Interior Principal Variation Search (PVS): zero-window scout after first move on PV nodes */
+    if (p_is_pv && pf->moves_searched >= 1u && p_alpha > 0u) {
+        pf->saved_target_bp = child_tbp;
+        pf->saved_ax = parent_eval_ax;
+        pf->saved_bx = (uint8_t)(child_flags_bx & 0x81u);
+        pf->re_search_state = 1u;
+    }
+
+    return 0;
+}
+
 static void tt_store_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp, TTFrame *tt_stack) {
     uint16_t ply = bp >> 1;
-    if (ply == 0u || ply >= PLY_STACK_CAP || !tt_stack[ply].active) return;
+    if (ply == 0u || ply >= PLY_STACK_CAP) return;
     TTFrame *f = &tt_stack[ply];
+    f->in_quiet_loop = 0;
+    f->re_search_state = 0;
+    if (!f->active) return;
     f->active = 0;
 
     if (eng[0x009Cu] & 0x80u) return;
@@ -2642,32 +2887,62 @@ static void tt_store_hook(FritzCtx *ctx, uint8_t *eng, uint16_t bp, TTFrame *tt_
         bound = 1u; /* EXACT */
     }
 
+    uint16_t bf = (f->best_from >= 0x0132u && f->best_from <= 0x01CCu) ? f->best_from : 0u;
+    uint16_t bt = (f->best_to >= 0x0132u && f->best_to <= 0x01CCu) ? f->best_to : 0u;
+
+    /* Never store a null-move fail-high mate score as a real mate */
+    if (bf == 0u && bound == 2u && score > 0xFD00u) {
+        score = (f->beta < 0xFD00u) ? (uint16_t)f->beta : 0xFCFFu;
+    }
+
     uint16_t store_score = score;
     if (store_score > 0xFD00u) store_score = (uint16_t)(store_score + bp);
     else if (store_score < 0x0300u) store_score = (uint16_t)(store_score - bp);
 
-    TTEntry *e = &ctx->tt[f->key & ctx->tt_mask];
-    uint64_t old_d = __atomic_load_n(&e->data, __ATOMIC_RELAXED);
-    uint64_t old_k = __atomic_load_n(&e->key_xor_data, __ATOMIC_RELAXED);
-    uint8_t  old_depth = (uint8_t)((old_d >> 36) & 0xFFu);
-    uint8_t  old_gen   = (uint8_t)((old_d >> 46) & 0x3Fu);
+    TTBucket *b = &ctx->tt[f->key & ctx->tt_mask];
+    int victim = 0;
+    int worst_prio = 100000;
 
-    if ((old_k ^ old_d) != f->key || old_gen != ctx->tt_gen || f->rem >= old_depth || (bound == 1u && (uint32_t)f->rem + 2u >= (uint32_t)old_depth)) {
-        uint16_t bf = (f->best_from >= 0x0132u && f->best_from <= 0x01CCu) ? f->best_from : 0u;
-        uint16_t bt = (f->best_to >= 0x0132u && f->best_to <= 0x01CCu) ? f->best_to : 0u;
-        if (bf == 0u && (old_k ^ old_d) == f->key) {
-            bf = (uint16_t)((old_d >> 16) & 0x3FFu);
-            bt = (uint16_t)((old_d >> 26) & 0x3FFu);
+    for (int i = 0; i < (int)TT_BUCKET_WAYS; i++) {
+        uint64_t old_d = __atomic_load_n(&b->slots[i].data, __ATOMIC_RELAXED);
+        uint64_t old_k = __atomic_load_n(&b->slots[i].key_xor_data, __ATOMIC_RELAXED);
+        if (old_d == 0ULL) {
+            victim = i;
+            break;
         }
-        uint64_t data = (uint64_t)store_score
-                      | ((uint64_t)(bf & 0x3FFu) << 16)
-                      | ((uint64_t)(bt & 0x3FFu) << 26)
-                      | ((uint64_t)f->rem << 36)
-                      | ((uint64_t)bound << 44)
-                      | ((uint64_t)(ctx->tt_gen & 0x3Fu) << 46);
-        __atomic_store_n(&e->data, data, __ATOMIC_RELAXED);
-        __atomic_store_n(&e->key_xor_data, f->key ^ data, __ATOMIC_RELAXED);
+        uint8_t old_depth = (uint8_t)((old_d >> 36) & 0xFFu);
+        uint8_t old_bound = (uint8_t)((old_d >> 44) & 0x3u);
+        uint8_t old_gen   = (uint8_t)((old_d >> 46) & 0x3Fu);
+        if ((old_k ^ old_d) == f->key) {
+            /* Same position: preserve existing best move if we don't have one */
+            if (bf == 0u) {
+                bf = (uint16_t)((old_d >> 16) & 0x3FFu);
+                bt = (uint16_t)((old_d >> 26) & 0x3FFu);
+            }
+            if (old_gen == ctx->tt_gen &&
+                f->rem < old_depth &&
+                !(bound == 1u && (uint32_t)f->rem + 2u >= (uint32_t)old_depth)) {
+                return;
+            }
+            victim = i;
+            break;
+        }
+        int age = (int)((ctx->tt_gen - old_gen) & 0x3Fu);
+        int prio = (int)old_depth + (old_bound == 1u ? 2 : 0) - age * 8;
+        if (prio < worst_prio) {
+            worst_prio = prio;
+            victim = i;
+        }
     }
+
+    uint64_t data = (uint64_t)store_score
+                  | ((uint64_t)(bf & 0x3FFu) << 16)
+                  | ((uint64_t)(bt & 0x3FFu) << 26)
+                  | ((uint64_t)f->rem << 36)
+                  | ((uint64_t)bound << 44)
+                  | ((uint64_t)(ctx->tt_gen & 0x3Fu) << 46);
+    __atomic_store_n(&b->slots[victim].data, data, __ATOMIC_RELAXED);
+    __atomic_store_n(&b->slots[victim].key_xor_data, f->key ^ data, __ATOMIC_RELAXED);
 }
 
 static void smp_diversify_root(FritzCtx *ctx, uint8_t *eng) {
@@ -2725,6 +3000,7 @@ static void exec_fritz_call(void) {
     main_ctx.tid = 0;
     main_ctx.is_main = 1;
     main_ctx.tt_gen = g_tt_gen;
+    main_ctx.modern_search = searching ? (uint8_t)opt_modern_search : 0u;
     exec_fritz_recompiled_ctx(&main_ctx);
     if (searching) {
         search_nodes = total_search_nodes();
@@ -3191,6 +3467,7 @@ static void handle_go(char *args) {
         smp_ctxs[i].tid = i + 1;
         smp_ctxs[i].is_main = 0;
         smp_ctxs[i].tt_gen = g_tt_gen;
+        smp_ctxs[i].modern_search = (uint8_t)opt_modern_search;
 #ifdef _WIN32
         HANDLE h = CreateThread(NULL, 0, smp_worker_entry, &smp_ctxs[i], 0, NULL);
         if (h) {
@@ -3298,6 +3575,8 @@ static void handle_setoption(char *args) {
         if (th < 1) th = 1;
         if (th > MAX_SMP_THREADS) th = MAX_SMP_THREADS;
         opt_threads = th;
+    } else if (strcmp(name, "modernsearch") == 0 && val) {
+        opt_modern_search = (strcmp(val, "true") == 0 || strcmp(val, "1") == 0) ? 1 : 0;
     }
 }
 
@@ -3305,6 +3584,7 @@ int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     init_parity_lut();
     init_zobrist();
+    init_lmr_table();
     tt_resize(opt_hash_mb);
 
     prog_start_ms = now_ms();
@@ -3342,12 +3622,13 @@ int main(void) {
         if (*cmd == '\0') continue;
 
         if (strcmp(cmd, "uci") == 0) {
-            printf("id name KnightStalkerUCI 2.5 (Fritz 1.00 1991)\n");
+            printf("id name KnightStalkerUCI 3.0 (Fritz 1.00 1991)\n");
             printf("id author Frans Morsch\n");
             printf("option name OwnBook type check default true\n");
             printf("option name Ponder type check default false\n");
             printf("option name Hash type spin default 64 min 0 max 512\n");
             printf("option name Threads type spin default 4 min 1 max 32\n");
+            printf("option name ModernSearch type check default true\n");
             printf("option name Clear Hash type button\n");
             printf("uciok\n");
             fflush(stdout);

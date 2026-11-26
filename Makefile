@@ -16,10 +16,10 @@ fritz_recompiled.h: tools/lift_fritz.py fritz_data.h
 	python3 tools/lift_fritz.py
 
 KnightStalkerUCI: knightstalker.c fritz_data.h fritz_recompiled.h
-	$(CC_LINUX) $(CFLAGS) -pthread -s -o $@ knightstalker.c
+	$(CC_LINUX) $(CFLAGS) -pthread -s -o $@ knightstalker.c -lm
 
 KnightStalkerUCI.exe: knightstalker.c fritz_data.h fritz_recompiled.h
-	$(CC_WIN) $(CFLAGS) -s -o $@ knightstalker.c
+	$(CC_WIN) $(CFLAGS) -s -o $@ knightstalker.c -lm
 
 clean:
 	rm -f KnightStalkerUCI KnightStalkerUCI.exe
