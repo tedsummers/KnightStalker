@@ -2,4 +2,6 @@ KnightStalker
 KnightStalker.exe
 KnightStalkerUCI
 KnightStalkerUCI.exe
+KnightStalkerUCI-macos-*
+KnightStalkerUCI-android-*
 *.o

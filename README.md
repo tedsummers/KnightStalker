@@ -1,6 +1,6 @@
 # KnightStalkerUCI
 
-Standalone **64-bit** UCI chess engines for **Linux** (`KnightStalkerUCI`, `x86_64` ELF) and **Windows** (`KnightStalkerUCI.exe`, `x86_64` PE32+), wrapping Frans Morsch's 1991 16-bit MS-DOS *KnightStalker* / *Fritz 1.00* engine (`FRITZ.BIN`) and opening book (`FRITZ.FBK`).
+Standalone UCI chess engines for **Linux** (`KnightStalkerUCI`, `x86_64` ELF), **Windows** (`KnightStalkerUCI.exe`, `x86_64` PE32+), **macOS** (`KnightStalkerUCI-macos-universal`, `arm64` Apple Silicon & `x86_64` Intel Mach-O), and **Android** (`KnightStalkerUCI-android-arm64` & `KnightStalkerUCI-android-armv7`, static-PIE ELF), wrapping Frans Morsch's 1991 16-bit MS-DOS *KnightStalker* / *Fritz 1.00* engine (`FRITZ.BIN`) and opening book (`FRITZ.FBK`).
 
 ## Try It Out on Lichess
 
@@ -89,15 +89,18 @@ Measured on an Intel Core Ultra 7 265 (`OwnBook=false`):
 - **Windows 64-bit target (`KnightStalkerUCI.exe`)**:
   - **MinGW-w64** (`x86_64-w64-mingw32-gcc`), **or**
   - **Zig** (`zig cc -target x86_64-windows-gnu`)
+- **macOS (`arm64` Apple Silicon, `x86_64` Intel, and Universal) & Android (`arm64` / `armv7` static-PIE) targets**:
+  - **Zig** (`zig cc`) + `python3` (for combining the macOS Universal binary)
 - **Regenerating `fritz_recompiled.h`** (optional — already checked in):
   - `python3` (`make recompile`)
 
 ### Build Commands
 
-Build both 64-bit binaries using `Makefile`:
+Build Linux + Windows binaries using `Makefile`, or all platforms (Linux, Windows, macOS, Android) via `make release`:
 
 ```bash
-make
+make          # Linux + Windows
+make release  # Linux + Windows + macOS (arm64/x86_64/universal) + Android (arm64/armv7)
 ```
 
 Or build each target individually:
@@ -105,26 +108,30 @@ Or build each target individually:
 ```bash
 # Linux 64-bit ELF (x86_64)
 make linux
-# Equivalent direct command:
-gcc -O3 -Wall -Wextra -std=c11 -pthread -s -o KnightStalkerUCI knightstalker.c -lm
 
 # Windows 64-bit PE32+ console executable (x86_64)
 make windows
-# Equivalent direct commands:
-x86_64-w64-mingw32-gcc -O3 -Wall -Wextra -std=c11 -s -o KnightStalkerUCI.exe knightstalker.c
-# or using Zig:
-zig cc -target x86_64-windows-gnu -O3 -Wall -Wextra -std=c11 -s -o KnightStalkerUCI.exe knightstalker.c
+
+# macOS Apple Silicon (arm64), Intel (x86_64), and Universal Fat Mach-O
+make macos
+
+# Android ARM64 (aarch64) and ARMv7 (32-bit) static-PIE ELF executables
+make android
 ```
 
 On Windows natively with MSYS2 MinGW-w64 or Zig installed, you can also run:
 
 ```powershell
-zig cc -target x86_64-windows-gnu -O3 -Wall -Wextra -std=c11 -s -o KnightStalkerUCI.exe knightstalker.c
+zig cc -target x86_64-windows-gnu -O3 -Wall -Wextra -std=c11 -s -o KnightStalkerUCI.exe knightstalker.c -lm
 ```
 
 ## Usage
 
-Download the prebuilt release binary for your platform (`KnightStalkerUCI` for Linux or `KnightStalkerUCI.exe` for Windows) or compile it from source, then register it as a **UCI engine** in any compatible chess GUI such as Arena, CuteChess, BanksiaGUI, Nibbler, or Lucas Chess.
+Download the prebuilt release binary for your platform from [GitHub Releases](https://github.com/tedsummers/KnightStalker/releases) or compile it from source, then register it as a **UCI engine** in any compatible chess GUI:
+
+- **Linux / Windows:** Arena, CuteChess, BanksiaGUI, Nibbler, En Croissant, or Lucas Chess.
+- **macOS:** BanksiaGUI, Nibbler, En Croissant, or HIARCS Chess Explorer (`chmod +x KnightStalkerUCI-macos-universal`; if macOS Gatekeeper flags the unsigned download, run `xattr -d com.apple.quarantine KnightStalkerUCI-macos-universal`).
+- **Android:** DroidFish, Chess for Android, Acid Ape Chess, or Termux (use `KnightStalkerUCI-android-arm64` on 64-bit devices, or `KnightStalkerUCI-android-armv7` on older 32-bit devices). *(Note: iOS does not allow standalone third-party command-line UCI binaries outside signed App Store apps.)*
 
 You can also test it directly from a terminal:
 
